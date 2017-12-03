@@ -2,7 +2,7 @@
 title: "Lookup Tables in R"
 subtitle: "Different Approaches"
 author: Ott Toomet
-date: \today
+date: "`r format(Sys.time())`"
 output: 
   html_document:
     highlight: tango
@@ -20,7 +20,8 @@ dict) data type, I was not sure what is the best way to quickly look
 up values from such a table.
 
 ```{r setup}
-library(foreach) # for convenient loops
+library(foreach)  # for convenient loops
+library(magrittr) # 'cause I love pipes
 ```
 
 # The Data
@@ -45,6 +46,37 @@ As you can see, I just create a large random integer matrix, and
 return the row and column values as attributes.
 
 
+# 0. Benchmark: no lookup
+
+To get an idea how fast lookup times can we realistically expect, I
+first run the code framework with no lookup, just extracting values
+from the matrix by known indices"
+```{r noMatch}
+noMatch <- function(data) {
+   rows <- attr(data, "rows")
+   cols <- attr(data, "cols")
+   for(i in seq(along=rows)) {
+      for(j in seq(length=length(cols))) {
+         a <- data[i,j]
+      }
+   }
+}
+```
+and let's time it with 6 different sizes of data:
+```{r timeMatrixMatch, cache=TRUE}
+n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+time <- foreach(n1 = n, .combine=c) %do% {
+   dat <- DGP(n1)
+   system.time(noMatch(dat))["user.self"]
+}
+time
+```
+
+```{r, include=FALSE}
+results <- data.frame(n=n, noMatch=time)
+```
+
+
 # 1. `match` by row and column values
 
 First, let's try the most straightforward approach by using
@@ -67,7 +99,6 @@ The function extracts row and column values, and thereafter looks up
 the values from the matrix in an arbitrary order.  As I am only
 concerned about the lookup itself, I discard the result.
 ```{r timeMatrixMatch, cache=TRUE}
-n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMatch(dat))["user.self"]
@@ -75,3 +106,18 @@ time <- foreach(n1 = n, .combine=c) %do% {
 time
 ```
 
+```{r, include=FALSE}
+results$matrixMatch <- time
+```
+
+# Final plot
+
+Finally, here are all the results together
+
+```{r plotAll}
+tidyr::gather(results, key=method, value=time, noMatch:matrixMatch) %>%
+   ggplot(aes(n, time, col=method)) +
+   geom_line() + geom_point() +
+   scale_x_log10() + scale_y_log10() +
+   labs(y = "time, s")
+```
