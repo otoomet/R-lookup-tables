@@ -24,7 +24,7 @@ First, just a setup:
 library(foreach)  # for convenient loops
 library(magrittr) # 'cause I love pipes
 library(ggplot2)
-n <- c(1e3, 3e3, 1e4, 3e4) #, 1e5, 3e5)
+n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
 ```
 
@@ -67,7 +67,7 @@ noMatch <- function(data) {
 }
 ```
 and let's time it with 6 different sizes of data:
-```{r noMatchMatch, cache=TRUE}
+```{r noMatchMatch, cache=TRUE, depends=c("setup", "noMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(noMatch(dat))["user.self"] %>%
@@ -76,7 +76,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
 time
 ```
 
-```{r, include=FALSE}
+```{r, include=FALSE, depends=c("setup", "noMatchMatch")}
 results <- data.frame(n=n, noMatch=time)
 ```
 
@@ -102,7 +102,7 @@ matrixMatch <- function(data) {
 The function extracts row and column values, and thereafter looks up
 the values from the matrix in an arbitrary order.  As I am only
 concerned with the lookup speed itself, I discard the result.
-```{r timeMatrixMatch, cache=TRUE}
+```{r timeMatrixMatch, cache=TRUE, depends=c("setup", "matrixMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMatch(dat))["user.self"] %>%
@@ -205,11 +205,11 @@ envDGP <- function(n1=120000, n2=50) {
    dates <- seq(from=as.Date("2011-08-01"), by="month", length=n2)
    dateNames <- paste0("d", format(dates, "%Y%m%d"))
    dataEnv <- new.env(hash=TRUE)
-   lapply(dateNames, function(d) assign(d, new.env(hash=TRUE), envir=dataEnv))
    for(id in seq(length=length(dates))) {
-      dateEnv <- get(dateNames[id], envir=dataEnv)
+      dateEnv <- new.env()
       i <- sample(1000, length(numbers), replace=TRUE)
-      lapply(seq(along=numbers), function(j) assign(numberNames[j], i[j], envir=dateEnv))
+      lapply(seq(along=numbers), function(j) dateEnv[[numberNames[j] ]] <- i[j])
+      dataEnv[[dateNames[id] ]] <- dateEnv
    }
    attr(dataEnv, "rows") <- numbers
    attr(dataEnv, "cols") <- dates
@@ -247,8 +247,6 @@ matching approach above.
 ```{r, include=FALSE}
 results$nestedEnv <- time
 ```
-
-
 
 
 # Final plot
