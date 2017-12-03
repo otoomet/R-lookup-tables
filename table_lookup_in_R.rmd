@@ -1,0 +1,48 @@
+---
+title: "Lookup Tables in R"
+subtitle: "Different Approaches"
+author: Ott Toomet
+date: \today
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+---
+
+# Setup
+
+I have to repeatedly look values from a large table in an arbitrary
+order.  The table is approximately 120,000 rows by 50 columns.  The
+rows are idexed by numbers and columns by dates.  This is not a huge
+table in current context but as R does not have a dedicated Map (or
+dict) data type, I was not sure what is the best way to quickly look
+up values from such a table.
+
+# The Data
+
+First let's create the data.  As I am not concerned with the
+efficiency of the data generation, I take the most strightforward way
+here.
+
+```{r DGP}
+DGP <- function(n1=120000, n2=50) {
+   ## create matrix of n1 msisdns by n2 dates
+   ## content is random integers
+   numbers <- as.numeric(sample(1e9, n1))
+   dates <- seq(from=as.Date("2011-08-01"), by="month", length=n2)
+   tab <- matrix(sample(1000, n1*n2, replace=TRUE), n1, n2)
+   attr(tab, "rows") <- numbers
+   attr(tab, "cols") <- dates
+   tab
+}
+```
+As you can see, I just create a large random integer matrix, and
+return the row and column values as attributes.
+
+
+# 1. `match` by row and column values
+
+First, let's try the most straightforward approach by using
+`match(value, rowValues)` to find row and `match(value, colValues)` to
+find the column:
