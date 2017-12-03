@@ -19,6 +19,10 @@ table in current context but as R does not have a dedicated Map (or
 dict) data type, I was not sure what is the best way to quickly look
 up values from such a table.
 
+```{r setup}
+library(foreach) # for convenient loops
+```
+
 # The Data
 
 First let's create the data.  As I am not concerned with the
@@ -46,3 +50,28 @@ return the row and column values as attributes.
 First, let's try the most straightforward approach by using
 `match(value, rowValues)` to find row and `match(value, colValues)` to
 find the column:
+```{r matrixMatch}
+matrixMatch <- function(data) {
+   rows <- attr(data, "rows")
+   cols <- attr(data, "cols")
+   for(number in sample(rows)) {
+      for(date in sample(cols)) {
+         i <- match(number, rows)
+         j <- match(date, cols)
+         a <- data[i,j]
+      }
+   }
+}
+```
+The function extracts row and column values, and thereafter looks up
+the values from the matrix in an arbitrary order.  As I am only
+concerned about the lookup itself, I discard the result.
+```{r timeMatrixMatch, cache=TRUE}
+n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+time <- foreach(n1 = n, .combine=c) %do% {
+   dat <- DGP(n1)
+   system.time(matrixMatch(dat))["user.self"]
+}
+time
+```
+
