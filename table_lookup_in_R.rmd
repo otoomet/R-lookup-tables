@@ -2,7 +2,7 @@
 title: "Lookup Tables in R"
 subtitle: "Different Approaches"
 author: Ott Toomet
-date: "`r format(Sys.time())`"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
 output: 
   html_document:
     highlight: tango
@@ -19,18 +19,22 @@ table in current context but as R does not have a dedicated Map (or
 dict) data type, I was not sure what is the best way to quickly look
 up values from such a table.
 
+First, just a setup:
 ```{r setup}
 library(foreach)  # for convenient loops
 library(magrittr) # 'cause I love pipes
+library(ggplot2)
+n <- c(1e3, 3e3, 1e4, 3e4) #, 1e5, 3e5)
+                           # timing repetitions used later
 ```
 
 # The Data
 
-First let's create the data.  As I am not concerned with the
+Now let's create the data.  As I am not concerned with the
 efficiency of the data generation, I take the most strightforward way
 here.
 
-```{r DGP}
+```{r matrixDGP}
 DGP <- function(n1=120000, n2=50) {
    ## create matrix of n1 msisdns by n2 dates
    ## content is random integers
@@ -51,7 +55,7 @@ return the row and column values as attributes.
 To get an idea how fast lookup times can we realistically expect, I
 first run the code framework with no lookup, just extracting values
 from the matrix by known indices"
-```{r noMatch}
+```{r noMatch, cache=TRUE}
 noMatch <- function(data) {
    rows <- attr(data, "rows")
    cols <- attr(data, "cols")
@@ -63,11 +67,11 @@ noMatch <- function(data) {
 }
 ```
 and let's time it with 6 different sizes of data:
-```{r timeMatrixMatch, cache=TRUE}
-n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+```{r noMatchMatch, cache=TRUE}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
-   system.time(noMatch(dat))["user.self"]
+   system.time(noMatch(dat))["user.self"] %>%
+      set_names(n1)
 }
 time
 ```
@@ -97,11 +101,12 @@ matrixMatch <- function(data) {
 ```
 The function extracts row and column values, and thereafter looks up
 the values from the matrix in an arbitrary order.  As I am only
-concerned about the lookup itself, I discard the result.
+concerned with the lookup speed itself, I discard the result.
 ```{r timeMatrixMatch, cache=TRUE}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
-   system.time(matrixMatch(dat))["user.self"]
+   system.time(matrixMatch(dat))["user.self"] %>%
+      set_names(n1)
 }
 time
 ```
@@ -110,12 +115,148 @@ time
 results$matrixMatch <- time
 ```
 
+# 2. Fastmatch' `fmatch` by row and column values
+
+It appears the `system::match` is slow for larger amount of numbers.
+Our next approach is to use the function `fmatch` from
+[`fastmatch` package](https://cran.r-project.org/web/packages/fastmatch/index.html).
+We keep the rest of the code identical to that of the previous.
+At the first pass, `fmatch` creates a hash table, and uses that table
+on subsequent passes.
+
+```{r matrixFmatch}
+matrixFmatch <- function(data) {
+   rows <- attr(data, "rows")
+   cols <- attr(data, "cols")
+   for(number in sample(rows)) {
+      for(date in sample(cols)) {
+         i <- fastmatch::fmatch(number, rows)
+         j <- fastmatch::fmatch(date, cols)
+         a <- data[i,j]
+      }
+   }
+}
+```
+And the results are:
+```{r timeMatrixFmatch, cache=TRUE, depends=c("matrixFmatch", "setup")}
+time <- foreach(n1 = n, .combine=c) %do% {
+   dat <- DGP(n1)
+   system.time(matrixFmatch(dat))["user.self"] %>%
+      set_names(n1)
+}
+time
+```
+We see a large improvement in the access time for larger
+tables--apparently the initial hash table creation dominates the
+timing for less than 10,000 records.
+
+
+```{r, include=FALSE}
+results$matrixFmatch <- time
+```
+
+# 3. Mixed `fmatch` and `match`
+
+As `fmatch` appears to be slow for small tables, we can replace
+matching be the small number of columns by `match`, keeping the code
+otherwise as above.
+
+```{r matrixMixedMatch}
+matrixMixedMatch <- function(data) {
+   rows <- attr(data, "rows")
+   cols <- attr(data, "cols")
+   for(number in sample(rows)) {
+      for(date in sample(cols)) {
+         i <- fastmatch::fmatch(number, rows)
+         j <- match(date, cols)
+         a <- data[i,j]
+      }
+   }
+}
+```
+And the results are:
+```{r timeMatrixMixedMatch, cache=TRUE, depends=c("matrixMixedMatch", "setup")}
+time <- foreach(n1 = n, .combine=c) %do% {
+   dat <- DGP(n1)
+   system.time(matrixMixedMatch(dat))["user.self"] %>%
+      set_names(n1)
+}
+time
+```
+We again see a noticeable improvement.  Apparently switching from
+`fmatch` to `match` pays off for small tables.  As it also involves
+one less letter of typing, I will recommend this trick in the future.
+
+```{r, include=FALSE}
+results$matrixMixedMatch <- time
+```
+
+# 4. Hashed environments
+
+So far I have created data as matrices.  But R offers other ways.  For
+instance, we can store data in nested environments:
+
+```{r envDGP}
+envDGP <- function(n1=120000, n2=50) {
+   ## create matrix of n1 msisdns by n2 dates
+   ## content is random integers
+   numbers <- as.numeric(sample(1e9, n1))
+   numberNames <- paste0("x", numbers)
+   dates <- seq(from=as.Date("2011-08-01"), by="month", length=n2)
+   dateNames <- paste0("d", format(dates, "%Y%m%d"))
+   dataEnv <- new.env(hash=TRUE)
+   lapply(dateNames, function(d) assign(d, new.env(hash=TRUE), envir=dataEnv))
+   for(id in seq(length=length(dates))) {
+      dateEnv <- get(dateNames[id], envir=dataEnv)
+      i <- sample(1000, length(numbers), replace=TRUE)
+      lapply(seq(along=numbers), function(j) assign(numberNames[j], i[j], envir=dateEnv))
+   }
+   attr(dataEnv, "rows") <- numbers
+   attr(dataEnv, "cols") <- dates
+   dataEnv
+}
+```
+We use the following extraction function:
+
+```{r nestedEnv}
+nestedEnv <- function(data) {
+   ## data: environment for nested data
+   rows <- attr(data, "rows")
+   cols <- attr(data, "cols")
+   numberNames <- paste0("x", rows)
+   dateNames <- paste0("d", format(cols, "%Y%m%d"))
+   for(number in sample(numberNames)) {
+      for(date in sample(dateNames)) {
+         a <- data[[date]][[number]]
+      }
+   }
+}
+```
+And the results are:
+```{r timeNestedEnv, cache=TRUE, depends=c("nestedEnv", "setup")}
+time <- foreach(n1 = n, .combine=c) %do% {
+   dat <- envDGP(n1)
+   system.time(nestedEnv(dat))["user.self"] %>%
+      set_names(n1)
+}
+time
+```
+Now we see a dramatic, almost 10-fold improvement over the mixed
+matching approach above.
+
+```{r, include=FALSE}
+results$nestedEnv <- time
+```
+
+
+
+
 # Final plot
 
 Finally, here are all the results together
 
 ```{r plotAll}
-tidyr::gather(results, key=method, value=time, noMatch:matrixMatch) %>%
+tidyr::gather(results, key=method, value=time, noMatch:nestedEnv) %>%
    ggplot(aes(n, time, col=method)) +
    geom_line() + geom_point() +
    scale_x_log10() + scale_y_log10() +
