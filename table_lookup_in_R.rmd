@@ -12,27 +12,33 @@ output:
 
 # Setup
 
-I have to repeatedly look values from a large table in an arbitrary
-order.  The table is approximately 120,000 rows by 50 columns.  The
-rows are idexed by numbers and columns by dates.  This is not a huge
-table in current context but as R does not have a dedicated Map (or
-dict) data type, I was not sure what is the best way to quickly look
-up values from such a table.
+What is the most efficient way to create lookup tables in R?  I test a
+few approaches for relatively large tables is approximately 100,000
+rows by 50 columns.  The main trick is that the rows are indexed by
+numbers, and columns by dates--I cannot just use ordinary matrix
+indexing but have first to locate the correct row and column from an 1D
+table.  Second, I am interested in repeated look-ups of single
+elements in arbitrary order.  So no full row or full column
+extractions.  These are not a huge tables nowadays, but as R does not
+have a dedicated Map data type, I was not sure what is the best way to
+quickly look up values from such a table.
 
-First, just a setup:
-```{r setup}
+We time this using the following number of rows:
+```{r setup, cache=TRUE, echo=FALSE}
 library(foreach)  # for convenient loops
 library(magrittr) # 'cause I love pipes
 library(ggplot2)
 n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
+n
 ```
 
 # The Data
 
-Now let's create the data.  As I am not concerned with the
-efficiency of the data generation, I take the most strightforward way
-here.
+Now let's create the data.  As I am not concerned with the efficiency
+of the data generation, I just create a large matrix here, and return
+the row and column values as attributes.  This code is fast as it is fully
+vectorized.
 
 ```{r matrixDGP}
 DGP <- function(n1=120000, n2=50) {
@@ -46,15 +52,13 @@ DGP <- function(n1=120000, n2=50) {
    tab
 }
 ```
-As you can see, I just create a large random integer matrix, and
-return the row and column values as attributes.
 
 
 # 0. Benchmark: no lookup
 
 To get an idea how fast lookup times can we realistically expect, I
-first run the code framework with no lookup, just extracting values
-from the matrix by known indices"
+first run the code that does not contain any lookup, just extracting values
+from the matrix by known indices.
 ```{r noMatch, cache=TRUE}
 noMatch <- function(data) {
    rows <- attr(data, "rows")
@@ -67,7 +71,7 @@ noMatch <- function(data) {
 }
 ```
 and let's time it with 6 different sizes of data:
-```{r noMatchMatch, cache=TRUE, depends=c("setup", "noMatch")}
+```{r noMatchMatch, cache=TRUE, dependson=c("setup", "noMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(noMatch(dat))["user.self"] %>%
@@ -75,15 +79,18 @@ time <- foreach(n1 = n, .combine=c) %do% {
 }
 time
 ```
+So, just extracting elements from such a matrix with 100k rows takes approximately
+1s (on an i7-3440 system).  We can also see a close to linear growth,
+10x larger matrix takes approximately 10 time more time to go through.
 
-```{r, include=FALSE, depends=c("setup", "noMatchMatch")}
+```{r, include=FALSE, dependson=c("setup", "noMatchMatch")}
 results <- data.frame(n=n, noMatch=time)
 ```
 
 
 # 1. `match` by row and column values
 
-First, let's try the most straightforward approach by using
+The first real task is to try the most straightforward approach by using
 `match(value, rowValues)` to find row and `match(value, colValues)` to
 find the column:
 ```{r matrixMatch}
@@ -99,10 +106,11 @@ matrixMatch <- function(data) {
    }
 }
 ```
-The function extracts row and column values, and thereafter looks up
+The function extracts row and column values from the data attributes,
+and thereafter looks up
 the values from the matrix in an arbitrary order.  As I am only
 concerned with the lookup speed itself, I discard the result.
-```{r timeMatrixMatch, cache=TRUE, depends=c("setup", "matrixMatch")}
+```{r timeMatrixMatch, cache=TRUE, dependson=c("setup", "matrixMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMatch(dat))["user.self"] %>%
@@ -114,16 +122,19 @@ time
 ```{r, include=FALSE}
 results$matrixMatch <- time
 ```
+`match` is slow for large tables.  The largest one reported here (15M
+entries) takes 1hr 46 minutes to churn through.  This is probably too
+slow for many realistic applications.  Note that running time grows
+roughly a n^2, suggesting `match` uses just sequential comparisons.
+
 
 # 2. Fastmatch' `fmatch` by row and column values
 
-It appears the `system::match` is slow for larger amount of numbers.
 Our next approach is to use the function `fmatch` from
 [`fastmatch` package](https://cran.r-project.org/web/packages/fastmatch/index.html).
-We keep the rest of the code identical to that of the previous.
 At the first pass, `fmatch` creates a hash table, and uses that table
 on subsequent passes.
-
+We keep the rest of the code identical to that in the previous section:
 ```{r matrixFmatch}
 matrixFmatch <- function(data) {
    rows <- attr(data, "rows")
@@ -138,7 +149,7 @@ matrixFmatch <- function(data) {
 }
 ```
 And the results are:
-```{r timeMatrixFmatch, cache=TRUE, depends=c("matrixFmatch", "setup")}
+```{r timeMatrixFmatch, cache=TRUE, dependson=c("matrixFmatch", "setup")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixFmatch(dat))["user.self"] %>%
@@ -148,7 +159,8 @@ time
 ```
 We see a large improvement in the access time for larger
 tables--apparently the initial hash table creation dominates the
-timing for less than 10,000 records.
+timing for less than 10,000 records.  We are also back to the linear
+growth in the lookup-time.
 
 
 ```{r, include=FALSE}
@@ -158,7 +170,7 @@ results$matrixFmatch <- time
 # 3. Mixed `fmatch` and `match`
 
 As `fmatch` appears to be slow for small tables, we can replace
-matching be the small number of columns by `match`, keeping the code
+matching by the small number of columns by `match`, keeping the code
 otherwise as above.
 
 ```{r matrixMixedMatch}
@@ -175,7 +187,7 @@ matrixMixedMatch <- function(data) {
 }
 ```
 And the results are:
-```{r timeMatrixMixedMatch, cache=TRUE, depends=c("matrixMixedMatch", "setup")}
+```{r timeMatrixMixedMatch, cache=TRUE, dependson=c("matrixMixedMatch", "setup")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMixedMatch(dat))["user.self"] %>%
@@ -185,7 +197,9 @@ time
 ```
 We again see a noticeable improvement.  Apparently switching from
 `fmatch` to `match` pays off for small tables.  As it also involves
-one less letter of typing, I will recommend this trick in the future.
+one less letter of typing, I will recommend this trick for everyone.
+Note that this move cut the lookup time of pure `fmatch` down to 56%
+preserving the linear growth.
 
 ```{r, include=FALSE}
 results$matrixMixedMatch <- time
@@ -194,8 +208,9 @@ results$matrixMixedMatch <- time
 # 4. Hashed environments
 
 So far I have created data as matrices.  But R offers other ways.  For
-instance, we can store data in nested environments:
-
+instance, we can store data in nested environments.  As we cannot
+vectorize environment access, the approach is slow, but this post only
+considers lookup-time, not table creation time.
 ```{r envDGP}
 envDGP <- function(n1=120000, n2=50) {
    ## create matrix of n1 msisdns by n2 dates
@@ -233,7 +248,7 @@ nestedEnv <- function(data) {
 }
 ```
 And the results are:
-```{r timeNestedEnv, cache=TRUE, depends=c("nestedEnv", "setup")}
+```{r timeNestedEnv, cache=TRUE, dependson=c("nestedEnv", "setup")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- envDGP(n1)
    system.time(nestedEnv(dat))["user.self"] %>%
@@ -242,7 +257,9 @@ time <- foreach(n1 = n, .combine=c) %do% {
 time
 ```
 Now we see a dramatic, almost 10-fold improvement over the mixed
-matching approach above.
+matching approach above for the middle-sized data.  For large data,
+however, the advantage is not as big.  The growth rate is faster than
+linear but not quite quadratic either.
 
 ```{r, include=FALSE}
 results$nestedEnv <- time
@@ -251,12 +268,16 @@ results$nestedEnv <- time
 
 # Final plot
 
-Finally, here are all the results together
+Finally, here is a plot with all approaches together.
 
-```{r plotAll}
+```{r plotAll, echo=FALSE}
 tidyr::gather(results, key=method, value=time, noMatch:nestedEnv) %>%
    ggplot(aes(n, time, col=method)) +
    geom_line() + geom_point() +
    scale_x_log10() + scale_y_log10() +
    labs(y = "time, s")
 ```
+
+R's built-in `match` is clearly the slowest approach for anything like
+large tables.  For the sizes analyzed here, environments offer the
+best speed albeit at a cost of some more complexity.
