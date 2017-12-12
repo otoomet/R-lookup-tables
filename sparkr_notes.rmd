@@ -1,0 +1,153 @@
+---
+title: "Notes on SparkR"
+subtitle: "A Substitute for Better Documentation"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+---
+
+```{r setup, include=FALSE}
+options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                      cache=TRUE,
+                      message=FALSE)
+library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
+ss <- sparkR.session(master = "local[2]",
+                     appName = "sparkNotes",
+                     sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
+                                      spark.driver.memory="8g",
+                                      log4j.logger.org.apache.parquet="INFO"
+                                      )
+                     )
+setLogLevel("WARN")
+```
+
+# Introduction
+
+SparkR is a potentially very valuable approach for big data handling.
+Unfortunately it's documentation is rather sparse.  Here I have
+collected a number of solutions and explanations I have been
+struggling myself and hope others may find useful.
+
+
+# Compression Codec
+
+By default, spark compresses parquet files by snappy codec.  You have
+to configure it to use something else, such as "gzip".  The codec must
+be specificed when initiatin spark session through _sparkConfig_
+argument.  _sparkConfig_ is a list of configuration options in the
+form of _name_ = _value_ and name for parquet compression is
+_spark.sql.parquet.comression.codec_.  Value must be a string.  For instance:
+
+ss <- sparkR.session(master = "local[8]",
+                     appName = "mySparkApp",
+                     sparkConfig=list(spark.sql.parquet.compression.codec="gzip")
+                     )
+
+Note: this must be done when spark session is initialized, later calls
+to `sparkR.conf` do not work.  Neither can you configure spark before
+you have initialized the sparkSession.
+
+
+# Merging and Lazy Evaluation
+
+Spark's lazy evaluation makes debugging hard, the code may fail
+before it seemingly get to execute the problematic line.
+
+For instance, when ordering before merging where the merge introduces
+ambiguous columns you may see an error like: 
+
+```
+org.apache.spark.sql.AnalysisException: Reference 'x' is ambiguous, could be: x#167L, x#565L.;
+```
+
+Example:
+```{r, error=FALSE}
+a <- createDataFrame(data.frame(x=1:2, y=11:12))
+b <- createDataFrame(data.frame(x=1:2, y=21:22))
+a %>%
+   group_by("y", "x") %>%
+   count() %>%
+   merge(b, by="x") %>%
+#   rename(x = column("x_y")) %>%
+   collect()
+```
+
+
+# Web Monitoring Ports
+
+if you start spark locally (--master local[n]), then the 8080 and 8081
+ports are not there, only 4040.
+
+
+# rest
+
+during merges (and possibly sorts) you may end up with being out of
+memory with error message like
+
+java.lang.IllegalArgumentException: Cannot allocate a page with more
+than 17179869176 bytes
+
+This is claimed to be related to grouping by key.  Spark tries to
+allocate equal amount of memory for each key, and if the distribution
+is skewed, it attempts to allocate too much.
+
+-----------------------------------
+
+I cannot understand how is.nan works.  Use instead
+
+isNull(col)
+
+or
+
+isNotNull(col)
+
+they can be used for filtering and they mark NA-s as TRUE
+
+--------------------------------------
+
+when doing UDF-s and return data.frame, you may get "Unsupported type
+for serialization" error.  This may be related to the fact that
+returned data.frame converts strings to factors and sparkR cannot
+serialize factors.  Use stringsAsFactors=FALSE
+
+-------------
+
+you cannot easily overwrite parquet file with new data.  The old cache
+remains in memory and it causes errors.
+
+-------------
+
+empty R data.frame %>% createDataFrame gives out-of-bounds errors
+
+--------------
+
+java.lang.StackOverflowError may be caused by rdd lineage getting too
+long 
+
+----------------
+
+read.parquet(): expects a list of files as the first argument
+read.df() expects a path where to read all the files as the first
+argument
+
+(spark 2.2)
+
+--------------------
+
+unix_timestamp(column, format) gives 'date' class
+to_utc_timestamp() expects 'timestamp' class
+you have to cast unix_timestamp() to 'timestamp'
+
+(spark 2.2.1)
+
+--------------------
+
+loadDF(fName, source="csv", header="true", sep=",")
+   default: no header, source not csv, sep=','
+
