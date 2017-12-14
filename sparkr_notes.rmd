@@ -1,5 +1,5 @@
 ---
-title: "Notes on SparkR"
+title: "Taming Spark and SparkR"
 subtitle: "While Waiting for Better Documentation"
 author: Ott Toomet
 date: "`r format(Sys.time(), '%Y-%m-%d')`"
@@ -17,6 +17,7 @@ knitr::opts_chunk$set(fig.height=100/25.4,
                       cache=TRUE,
                       message=FALSE)
 library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
+library(magrittr)
 ss <- sparkR.session(master = "local[2]",
                      appName = "sparkNotes",
                      sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
@@ -101,6 +102,93 @@ the previous example the code works, I guess this is related to how
 well can the code translated to spark execution plans.
 
 (Spark 2.2.1)
+
+
+# Ordering by Group
+
+Many common tasks require ordering by group.  SparkR has multi-column
+ordering function (`arrange`) and multi-column grouping (`groupBy`).
+Unfortunately, these two do not play together.  Assume we have
+temperature data
+```{r, cache=FALSE}
+temp <- data.frame(month = c("Nov", "Nov", "Dec", "Dec"), day=c(1,15,1,15), temp=c(14,12,10,12)) %>%
+   createDataFrame()
+temp %>%
+   collect()
+```
+and we want to find the hottest day each month.  Unlike in `dplyr`, you
+cannot just do
+```{r, eval=FALSE}
+temp %>%
+   groupBy("month") %>%
+   arrange("temp") %>%
+   agg(maxDay = day[1])
+```
+as grouped data cannot be arranged in spark.
+
+## Window Functions
+
+A correct solution seems to be to use window functions.  Windows in
+SQL parlance are blocks of rows where one can do certain operations.
+Windows can be defined in a different ways, here we are interested
+partitioning data by keys into windows.  This can be done as
+`windowPartitionBy("month")`.  This tells spark that data must be
+"partitioned" by month (I guess the 'partition' here not the same as
+RDD partition), and we can operate separately on these partitions.
+
+Now we want to order the partitions by temperature.  This can be
+achieved by `ws <- orderBy(windowPartitionBy("month"), "temp")`.  Note we
+first define window partition, and thereafter it's ordering.  These
+operations form our _window specification_ `ws`.  This is just
+specification, we haven't touched the data yet.
+
+When done with window specification, one can use window functions.
+These can be invoked by `over(x, window)` where `x` is a column,
+mostly likely computed via window functions, and `window` is the
+window spec we defined above.  To solve the task above, we can add the
+row number (i.e. temperature rank) for each day in month.  So we can
+do:
+```{r}
+ws <- orderBy(windowPartitionBy("month"), "temp")
+temp %>%
+   mutate(n = over(row_number(), ws)) %>%
+   filter(column("n") == 1) %>%
+   collect()
+```
+(note the syntax `column("n")` to refer to the column "n").
+
+This approach works otherwise great, but unfortunately it picks the
+_lowest_ temperature day.  I haven't found a way to insert `desc`
+operator for `orderBy` sorting--it only accepts string column names,
+not `column("temp")`, no `desc("temp")`.  So we have to resort on a
+stupid trick by reversing the sign of temp:
+```{r}
+ws <- orderBy(windowPartitionBy("month"), "temp1")
+temp %>%
+   mutate(temp1 = -column("temp")) %>%
+   mutate(n = over(row_number(), ws)) %>%
+   filter(column("n") == 1) %>%
+   collect()
+```
+Obviously, in the final version we may drop obsolete variables and
+order the data according to month.
+
+
+## `arrange` - `groupBy`
+
+Note: it is tempting to do go the following way instead:
+```{r}
+temp %>%
+   arrange(column("month"), desc(column("temp"))) %>%
+   groupBy("month") %>%
+   agg(maxDay = first("day")) %>%
+   collect()
+```
+This is simple, and seems to work, at least locally.  Unfortunately there is no
+guarantee that `groupBy` preserves the order (see
+[SPARK-16207](https://issues.apache.org/jira/browse/SPARK-16207)).
+
+
 
 # other notes (incomplete)
 
@@ -187,14 +275,28 @@ you have to cast unix\_timestamp() to 'timestamp'
 (spark 2.2.1)
 
 
-## library dependencies
-
-sparkR imports magrittr (2.2.1)
-
-
 ## rename
 
 needs meaningful colnames? (2.2.1)
+
+
+
+## pivot
+
+don't pivot on groupBy columns
+
+
+## arrange
+
+arrange("x", "y")
+
+or 
+
+arrange(column("x"), column("y"))  (works with 'desc')
+
+but not 
+
+arrange("x", column("y"))
 
 
 

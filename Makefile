@@ -10,6 +10,6 @@ HTML = $(patsubst %.rmd, %.html, $(SOURCES))
 all: $(HTML)
 
 clean:
-	rm -vf $(TEX) *.rmd~
+	rm -vf $(TEX) *.rmd~ && rm -rf metastore_db
 # -v : verbose
 # -f: ignore non-existent files

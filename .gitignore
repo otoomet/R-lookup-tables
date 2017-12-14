@@ -29,6 +29,8 @@ vignettes/*.pdf
 /*_cache/
 /cache/
 /figure/
+# spark temp data
+/metastore_db/
 
 # Temporary files created by R markdown
 *.utf8.md
