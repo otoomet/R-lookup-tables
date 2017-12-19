@@ -190,6 +190,50 @@ guarantee that `groupBy` preserves the order (see
 
 
 
+# How to Rename Columns: `rename` and `withColumnRenamed`
+
+There are two built-in functions for renaming.  `rename` expects a
+list of arguments in the form of `newName = existingColumn` (after the
+data frame argument).  Note: this is quoted or unquoted name = column, not
+column name.  This is
+perhaps the easiest way to rename variables:
+```{r}
+data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
+data %>%
+   rename(id = column("a"), "name" = column("b")) %>%
+   collect()
+```
+
+`withColumnRenamed` expects two arguments (after the data frame
+argument): old column name and new column name.  Note: these are
+column names, not columns, and the order is the other way around:
+```{r, cache=FALSE}
+data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
+data %>%
+   withColumnRenamed("a", "id") %>%
+   withColumnRenamed("b", "name") %>%
+   collect()
+```
+
+However, certain short column names do not work (2.2.1) and exit with
+an uninformative error message:
+```{r}
+data %>%
+   rename("x" = column("a")) %>%
+   collect()
+```
+
+Name "xx" works, however:
+```{r}
+data %>%
+   rename("xx" = column("a")) %>%
+   collect()
+```
+
+
+
+
+
 # other notes (incomplete)
 
 ## Web Monitoring Ports
@@ -273,11 +317,6 @@ to\_utc\_timestamp() expects 'timestamp' class
 you have to cast unix\_timestamp() to 'timestamp'
 
 (spark 2.2.1)
-
-
-## rename
-
-needs meaningful colnames? (2.2.1)
 
 
 
