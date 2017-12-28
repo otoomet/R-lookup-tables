@@ -36,6 +36,18 @@ collected a number of solutions and explanations I have been
 struggling myself and hope others may find useful.
 
 
+# Getting Run-Time Configuration
+
+The basic run-time configuration can be returned by `sparkR.conf()`.
+Without any arguments it returns all set options:
+```{r}
+sparkR.conf()
+```
+Note that there is no obvious entry for parallelism.  When invoked
+locally, it is visible in the for of "master[2]", but no separate
+entry is provided (2.2.1).
+
+
 # Compression Codecs
 
 By default, spark compresses parquet files by snappy codec which
@@ -231,6 +243,38 @@ data %>%
 ```
 
 
+# arrange
+
+Spark dataframes can be ordered by `arrange` function.  It orders the
+data by "natural order", i.e. alphabetically for character columns and
+in numeric order for numerics.
+The syntax is
+similar to that of _dplyr_: `arrange(col, col, ...)`.  However, there
+are two separate functions:
+```r
+arrange("col1", "col2", ...)
+```
+and
+```r
+arrange(col1, col2, ...)
+```
+In the former case, `arrange` expects a list of column names, in the
+latter case a list of columns.
+The latter version also works with order-reversal function `desc`, the
+former version does not.
+As an example, use the temperature data from above:
+```{r}
+temp %>%
+   arrange("month", "temp") %>%
+   collect()
+temp %>%
+   arrange(column("month"), desc(column("temp"))) %>%
+   collect()
+```
+One cannot mix the two approaches: `arrange("x", column("y"))` will
+not work
+
+(2.2.1)
 
 
 
@@ -325,22 +369,9 @@ you have to cast unix\_timestamp() to 'timestamp'
 don't pivot on groupBy columns
 
 
-## arrange
-
-arrange("x", "y")
-
-or 
-
-arrange(column("x"), column("y"))  (works with 'desc')
-
-but not 
-
-arrange("x", column("y"))
-
 
 
 
 ```{r finalize, include=FALSE}
 sparkR.stop()
 ```
-
