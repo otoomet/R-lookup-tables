@@ -8,6 +8,11 @@ output:
     highlight: tango
     df_print: kable
     fig_caption: false
+    toc: true
+    toc_float:
+      smooth_scroll: false
+    toc_depth: 2
+    number_sections: true
 ---
 
 ```{r setup, include=FALSE, cache=FALSE}
@@ -36,7 +41,9 @@ collected a number of solutions and explanations I have been
 struggling myself and hope others may find useful.
 
 
-# Getting Run-Time Configuration
+# Configuration
+
+## Getting Run-Time Configuration
 
 The basic run-time configuration can be returned by `sparkR.conf()`.
 Without any arguments it returns all set options:
@@ -48,7 +55,7 @@ locally, it is visible in the for of "master[2]", but no separate
 entry is provided (2.2.1).
 
 
-# Compression Codecs
+## Compression Codecs
 
 By default, spark compresses parquet files by snappy codec which
 creates rather large temporary files.  You have
