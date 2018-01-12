@@ -24,10 +24,21 @@ have a dedicated Map data type, I was not sure what is the best way to
 quickly look up values from such a table.
 
 We time this using the following number of rows:
-```{r setup, cache=TRUE, echo=FALSE}
+```{r setup, echo=FALSE}
+knitr::knit_engines$set(
+  engine.path = list(python = "/usr/bin/python3")
+)
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                     message=FALSE,
+                     cache=TRUE,
+                     cache.path=".table_lookup_cache/")
 library(foreach)  # for convenient loops
 library(magrittr) # 'cause I love pipes
 library(ggplot2)
+```
+
+```{r R}
 n <- c(1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
 n
@@ -281,3 +292,38 @@ tidyr::gather(results, key=method, value=time, noMatch:nestedEnv) %>%
 R's built-in `match` is clearly the slowest approach for anything like
 large tables.  For the sizes analyzed here, environments offer the
 best speed albeit at a cost of some more complexity.
+
+
+# For comparison: same process in python/pandas
+
+```{python}
+#
+import pandas as pd
+import numpy as np
+import time
+def dgp(n1, n2):
+    numbers = list(np.random.choice(int(1e7), n1, replace=False))
+    # use a smaller number to choose from here -- seems to be terribly slow otherwise
+    dates = list(pd.date_range('2011-03-04', periods=n2))
+    data = pd.DataFrame(np.random.choice(1000, size=(n1,n2)),
+                        columns=dates, index=numbers)
+    return data, numbers, dates
+def extract(data, rows, columns):
+    t0 = time.time()
+    for number in np.random.choice(rows, size=len(rows), replace=False):
+        for date in np.random.choice(columns, size=len(columns), replace=False):
+            i = rows.index(number)
+            j = columns.index(date)
+            a = data.iloc[i,j]
+    t1 = time.time()
+    print(data.shape[0], "\n", t1 - t0)
+n2 = 50
+n1s = np.array([1e3, 3e3, 1e4, 3e4, 1e5, 3e5], dtype="int")
+n1s = np.array([1e3, 3e3, 1e4], dtype="int")
+print("n\tseconds")
+for n1 in n1s:
+    (data, rows, columns) = dgp(n1, n2)
+    extract(data, rows, columns)
+```
+
+Why is it so much slower?
