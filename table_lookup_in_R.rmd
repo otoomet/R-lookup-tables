@@ -25,14 +25,13 @@ quickly look up values from such a table.
 
 We time this using the following number of rows:
 ```{r setup, echo=FALSE}
-knitr::knit_engines$set(
-  engine.path = list(python = "/usr/bin/python3")
-)
 knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
                      message=FALSE,
                      cache=TRUE,
-                     cache.path=".table_lookup_cache/")
+                     cache.path=".table_lookup_cache/",
+                     engine.path = list(python = "/usr/bin/python3")
+                     )
 library(foreach)  # for convenient loops
 library(magrittr) # 'cause I love pipes
 library(ggplot2)
@@ -82,7 +81,7 @@ noMatch <- function(data) {
 }
 ```
 and let's time it with 6 different sizes of data:
-```{r noMatchMatch, cache=TRUE, dependson=c("setup", "noMatch")}
+```{r noMatchMatch, cache=TRUE, dependson=c("R", "noMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(noMatch(dat))["user.self"] %>%
@@ -94,7 +93,7 @@ So, just extracting elements from such a matrix with 100k rows takes approximate
 1s (on an i7-3440 system).  We can also see a close to linear growth,
 10x larger matrix takes approximately 10 time more time to go through.
 
-```{r, include=FALSE, dependson=c("setup", "noMatchMatch")}
+```{r, include=FALSE, dependson=c("R", "noMatchMatch")}
 results <- data.frame(n=n, noMatch=time)
 ```
 
@@ -121,7 +120,7 @@ The function extracts row and column values from the data attributes,
 and thereafter looks up
 the values from the matrix in an arbitrary order.  As I am only
 concerned with the lookup speed itself, I discard the result.
-```{r timeMatrixMatch, cache=TRUE, dependson=c("setup", "matrixMatch")}
+```{r timeMatrixMatch, cache=TRUE, dependson=c("R", "matrixMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMatch(dat))["user.self"] %>%
@@ -160,7 +159,7 @@ matrixFmatch <- function(data) {
 }
 ```
 And the results are:
-```{r timeMatrixFmatch, cache=TRUE, dependson=c("matrixFmatch", "setup")}
+```{r timeMatrixFmatch, cache=TRUE, dependson=c("matrixFmatch", "R")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixFmatch(dat))["user.self"] %>%
@@ -198,7 +197,7 @@ matrixMixedMatch <- function(data) {
 }
 ```
 And the results are:
-```{r timeMatrixMixedMatch, cache=TRUE, dependson=c("matrixMixedMatch", "setup")}
+```{r timeMatrixMixedMatch, cache=TRUE, dependson=c("matrixMixedMatch", "R")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMixedMatch(dat))["user.self"] %>%
@@ -259,7 +258,7 @@ nestedEnv <- function(data) {
 }
 ```
 And the results are:
-```{r timeNestedEnv, cache=TRUE, dependson=c("nestedEnv", "setup")}
+```{r timeNestedEnv, cache=TRUE, dependson=c("nestedEnv", "R")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- envDGP(n1)
    system.time(nestedEnv(dat))["user.self"] %>%
@@ -294,7 +293,9 @@ large tables.  For the sizes analyzed here, environments offer the
 best speed albeit at a cost of some more complexity.
 
 
-# For comparison: same process in python/pandas
+# For comparison: the same process in python/pandas
+
+
 
 ```{python}
 #
