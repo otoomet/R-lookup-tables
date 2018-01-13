@@ -8,6 +8,7 @@ output:
     highlight: tango
     df_print: kable
     fig_caption: false
+    code_folding: hide
 ---
 
 # Setup
@@ -291,7 +292,6 @@ I do not test the python list built-in method `.index` as it is a wrapper to
 sequential matching and hence very slow.
 
 ```{python, cache=TRUE}
-#
 import pandas as pd
 import numpy as np
 import time
