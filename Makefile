@@ -10,6 +10,6 @@ HTML = $(patsubst %.rmd, %.html, $(SOURCES))
 all: $(HTML)
 
 clean:
-	rm -vf $(TEX) *.rmd~ && rm -rf metastore_db
+	rm -vf $(TEX) *.rmd~ && rm -rf metastore_db && rm python_results.csv
 # -v : verbose
 # -f: ignore non-existent files
