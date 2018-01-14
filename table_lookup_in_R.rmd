@@ -54,7 +54,7 @@ the row and column values as attributes.  This code is fast as it is fully
 vectorized.
 
 ```{r matrixDGP}
-DGP <- function(n1=120000, n2=50) {
+DGP <- function(n1, n2=50) {
    ## create matrix of n1 msisdns by n2 dates
    ## content is random integers
    numbers <- as.numeric(sample(1e9, n1))
@@ -84,7 +84,7 @@ noMatch <- function(data) {
 }
 ```
 and let's time it with 6 different number of rows:
-```{r noMatchMatch, cache=TRUE, dependson=c("R", "noMatch")}
+```{r noMatchMatch, cache=TRUE, dependson=c("R", "matrixDGP", "noMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(noMatch(dat))["user.self"] %>%
@@ -123,7 +123,7 @@ The function extracts row and column values from the data attributes,
 and thereafter looks up
 the values from the matrix in an arbitrary order.  As I am only
 concerned with the lookup speed itself, I discard the result.
-```{r timeMatrixMatch, cache=TRUE, dependson=c("R", "matrixMatch")}
+```{r timeMatrixMatch, cache=TRUE, dependson=c("R", "matrixDGP", "matrixMatch")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMatch(dat))["user.self"] %>%
@@ -164,7 +164,7 @@ matrixFmatch <- function(data) {
 }
 ```
 And the results are:
-```{r timeMatrixFmatch, cache=TRUE, dependson=c("matrixFmatch", "R")}
+```{r timeMatrixFmatch, cache=TRUE, dependson=c("matrixFmatch", "matrixDGP", "R")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixFmatch(dat))["user.self"] %>%
@@ -202,7 +202,7 @@ matrixMixedMatch <- function(data) {
 }
 ```
 And the results are:
-```{r timeMatrixMixedMatch, cache=TRUE, dependson=c("matrixMixedMatch", "R")}
+```{r timeMatrixMixedMatch, cache=TRUE, dependson=c("matrixMixedMatch", "matrixDGP", "R")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- DGP(n1)
    system.time(matrixMixedMatch(dat))["user.self"] %>%
@@ -227,7 +227,7 @@ instance, we can store data in nested environments.  As we cannot
 vectorize environment access, the approach is slow, but this post only
 considers lookup-time, not table creation time.
 ```{r envDGP}
-envDGP <- function(n1=120000, n2=50) {
+envDGP <- function(n1, n2=50) {
    ## create matrix of n1 msisdns by n2 dates
    ## content is random integers
    numbers <- as.numeric(sample(1e9, n1))
@@ -263,7 +263,7 @@ nestedEnv <- function(data) {
 }
 ```
 And the results are:
-```{r timeNestedEnv, cache=TRUE, dependson=c("nestedEnv", "R")}
+```{r timeNestedEnv, cache=TRUE, dependson=c("nestedEnv", "envDGP", "R")}
 time <- foreach(n1 = n, .combine=c) %do% {
    dat <- envDGP(n1)
    system.time(nestedEnv(dat))["user.self"] %>%
