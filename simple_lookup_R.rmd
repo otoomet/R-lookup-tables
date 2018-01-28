@@ -1,0 +1,87 @@
+---
+title: "Simple Value Lookup R"
+subtitle: "Different Approaches"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    code_folding: hide
+---
+
+# Setup
+
+In [an earlier post](https://otoomet.github.io/table_lookup_in_R.html)
+I compared the time for looking up values in a 2D 
+table, indexed by different type of objects.  Now let's take a step
+backward and analyze a simple 1D value lookup.
+
+We create pairs of vectors to keep the values, and use the first one
+to look up the value in the second one.
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                     message=FALSE,
+                     cache=TRUE,
+                     cache.path=".table_lookup_cache/",
+                     engine.path = list(python = "/usr/bin/python3")
+                     )
+library(foreach)  # for convenient loops
+library(magrittr) # 'cause I love pipes
+library(ggplot2)
+```
+
+```{r R}
+n <- c(3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+                           # timing repetitions used later
+n
+```
+
+In practice the task boils down to finding the index of a given value
+in a list of keys.  However, I model it in a bit more complex way to
+see if different data types make any difference.
+
+## The simple case: integer to integer
+
+### Built-in `match`
+
+```{r matchIntToInt}
+doMatch <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- values[match(key, keys)]
+   }
+}
+
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- sample(values)
+                           # keys are values in random order
+   system.time(doMatch(sample(keys), values))["user.self"] %>%
+                           # find keys in random order
+      set_names(n1)
+}
+time
+results <- data.frame(n=n, "match int-int"=time, check.names=FALSE)
+results
+```
+
+
+# Final plot
+
+Finally, here is a plot with all approaches together.
+
+```{r plotAll, echo=FALSE, cache=FALSE}
+# cannot delete the file: if python chunk is taken from cache, it will not re-create it
+tidyr::gather(results, key=method, value=time, "match int-int") %>%
+   ggplot(aes(n, time, col=method)) +
+   geom_line() + geom_point() +
+   scale_x_log10() + scale_y_log10() +
+   labs(y = "time, s")
+```
+
+
+
