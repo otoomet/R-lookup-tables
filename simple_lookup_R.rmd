@@ -35,7 +35,7 @@ library(ggplot2)
 ```
 
 ```{r R}
-n <- c(3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+n <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
 n
 ```
@@ -44,11 +44,49 @@ In practice the task boils down to finding the index of a given value
 in a list of keys.  However, I model it in a bit more complex way to
 see if different data types make any difference.
 
+We use _microbenchmark_ library and report timing in milliseconds.
+
+
+## Benchmark: no lookup
+
+First we do the exercise with no actual value lookup.  This serves as
+a benchmark: in particular for small lookup tables, the actual lookup
+time may be small compared to other related overheads.  Here we 
+
+```{r noLookup, dependson="R"}
+doNothing <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- values[key]
+   }
+}
+
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- seq(along=values)
+                           # keys are just the integer indices
+   microbenchmark::microbenchmark(doNothing(sample(keys), values),
+                                  control=list(warmup=10)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n1)
+}
+results <- data.frame(n=n, "no lookup"=time, check.names=FALSE)
+time
+```
+We see that the theoretical lower bound is 
+`r formatC(tail(results[["match int-int"]], 1), format="f",
+   digits=0)`ms.
+
+
 ## The simple case: integer to integer
 
 ### Built-in `match`
 
-```{r matchIntToInt}
+```{r matchIntToInt, dependson="R"}
 doMatch <- function(keys, values) {
    ## find values, corresponding to keys
    for(key in keys) {
@@ -60,14 +98,199 @@ time <- foreach(n1 = n, .combine=c) %do% {
    values <- sample(1000000000L, n1)
    keys <- sample(values)
                            # keys are values in random order
-   system.time(doMatch(sample(keys), values))["user.self"] %>%
+   microbenchmark::microbenchmark(doMatch(sample(keys), values), times=2L,
+                                  control=list(warmup=1)) %>%
                            # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
       set_names(n1)
 }
+results[["match int-int"]] <- time
 time
-results <- data.frame(n=n, "match int-int"=time, check.names=FALSE)
-results
 ```
+The result--`r formatC(tail(results[["match int-int"]], 1)/1000,
+   format="f", digits=0)`s 
+is not impressive but may work for many practical applications for 
+`r tail(n,1)`-element table.
+
+
+
+### Named vectors
+
+R has a version of lookup table built-in in the form of named
+vectors.  We test the speed in two ways: converting numeric keys to
+character on the fly; and using character keys.
+
+The on the fly conversion ("named vectors 1") gives the following timings:
+```{r namedVector1, dependson="R"}
+doNV1 <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- values[as.character(keys)]
+   }
+}
+
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- sample(values)
+                           # keys are values in random order
+   values <- setNames(values, keys)
+                           # create the named vector
+   microbenchmark::microbenchmark(doNV1(sample(keys), values), times=1L) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n1)
+}
+results[["named vectors 1"]] <- time
+time
+```
+
+And the pre-conversion ("named vectors 2") results in:
+```{r namedVector2, dependson="R"}
+doNV2 <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- values[as.character(keys)]
+   }
+}
+
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- as.character(sample(values))
+                           # keys are values in random order, now character strings
+   values <- setNames(values, keys)
+                           # create the named vector
+   microbenchmark::microbenchmark(doNV2(sample(keys), values), times=1L) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n1)
+}
+results[["named vectors 2"]] <- time
+time
+```
+
+As one can clearly see, both approaches are very slow.  Neither 
+`r formatC(tail(results[["named vectors 1"]], 1)/1000, format="f", digits=0)`s nor 
+`r formatC(tail(results[["named vectors 2"]], 1)/1000, format="f", digits=0)`s are feasible speeds
+for a lookup of table of size `r tail(n,1)`.
+
+
+
+### `fmatch` in "fastmatch"
+
+Unlike built-in `match` with it's sequential lookup,
+`fastmatch::fmatch` constructs the lookup hashtable at the first iteration, and later
+uses it.  It results in dramatically better times for long tables.
+
+```{r fmatchIntToInt, dependson="R"}
+doFMatch <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- values[fastmatch::fmatch(key, keys)]
+   }
+}
+
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- sample(values)
+                           # keys are values in random order
+   microbenchmark::microbenchmark(doFMatch(sample(keys), values), times=2L,
+                                  control=list(warmup=1)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n1)
+}
+results[["fmatch int-int"]] <- time
+time
+```
+The result--`r formatC(tail(results[["fmatch int-int"]], 1)/1000,
+   format="f", digits=1)`s--seems to be fair speed, potentially for
+   most applications.
+
+
+### Hashed environment
+
+R environments can be used as built-in hashed lookup tables, as long
+as the keys can be represented as character strings.  This works well
+for integers.
+
+```{r hEnv, dependson="R"}
+doHEnv <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- env[[key]]
+   }
+}
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- as.character(sample(values))
+                           # we need character values to access the environment
+   values <- setNames(values, keys)
+                           # make it into a vector...
+   env <- list2env(as.list(values), hash=TRUE)
+                           # and convert into a hashed environment
+   microbenchmark::microbenchmark(doHEnv(sample(keys), values), times=2L,
+                                  control=list(warmup=1)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n1)
+}
+results[["hashed env"]] <- time
+time
+```
+
+So far, hashed environments appear to be the fastest approach.
+Although the performance gap between this and `fmatch` decreases at
+large n, with `r formatC(tail(results[["hashed env"]], 1)/1000,
+   format="f", digits=1)`s of running time it is still noticeably faster
+   than `fmatch`.
+
+
+### Hashed envirnoment with on-the-fly-conversion
+
+
+```{r hEnvInt, dependson="R"}
+doHEnv <- function(keys, values) {
+   ## find values, corresponding to keys
+   for(key in keys) {
+      v <- env[[as.character(key)]]
+   }
+}
+time <- foreach(n1 = n, .combine=c) %do% {
+   values <- sample(1000000000L, n1)
+   keys <- sample(values)
+                           # we need character values to access the environment
+   values <- setNames(values, keys)
+                           # make it into a vector...
+   env <- list2env(as.list(values), hash=TRUE)
+                           # and convert into a hashed environment
+   microbenchmark::microbenchmark(doHEnv(sample(keys), values), times=2L,
+                                  control=list(warmup=1)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n1)
+}
+results[["hashed fly"]] <- time
+time
+```
+
 
 
 # Final plot
@@ -76,12 +299,15 @@ Finally, here is a plot with all approaches together.
 
 ```{r plotAll, echo=FALSE, cache=FALSE}
 # cannot delete the file: if python chunk is taken from cache, it will not re-create it
-tidyr::gather(results, key=method, value=time, "match int-int") %>%
+tidyr::gather(results, key=method, value=time, "no lookup":"hashed fly") %>%
    ggplot(aes(n, time, col=method)) +
    geom_line() + geom_point() +
    scale_x_log10() + scale_y_log10() +
-   labs(y = "time, s")
+   labs(y = "time, ms")
 ```
 
-
-
+We see that indexing by names is always the slowest option.  The clear
+winner is the hashed environment, at least up to the size of hundreds
+of thousands.  The second place depends on the table size: built-in
+`match` gives the best performance for up 10,000, for
+larger tables, `fastmatch::fmatch` is better.
