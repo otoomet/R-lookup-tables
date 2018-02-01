@@ -1,5 +1,5 @@
 ---
-title: "Simple Value Lookup R"
+title: "Simple Int-to-Int Value Lookup R"
 subtitle: "Different Approaches"
 author: Ott Toomet
 date: "`r format(Sys.time(), '%Y-%m-%d')`"
@@ -16,10 +16,15 @@ output:
 In [an earlier post](https://otoomet.github.io/table_lookup_in_R.html)
 I compared the time for looking up values in a 2D 
 table, indexed by different type of objects.  Now let's take a step
-backward and analyze a simple 1D value lookup.
+backward and analyze a simple 1D value lookup.  I am focusing on
+integer-integer lookup, i.e. both keys and values are integers.  The
+type of values is probably of little importance as most of the work is presumably
+done looking up the keys in the key tables.  However, I model it in a bit more complex way to
+see if different data types make any difference.
 
 We create pairs of vectors to keep the values, and use the first one
 to look up the value in the second one.
+
 
 ```{r setup, echo=FALSE}
 knitr::opts_knit$set(aliases=c(h="fig.height"))
@@ -34,15 +39,13 @@ library(magrittr) # 'cause I love pipes
 library(ggplot2)
 ```
 
+We look up all the values of tables of different sizes:
+
 ```{r R}
 n <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
 n
 ```
-
-In practice the task boils down to finding the index of a given value
-in a list of keys.  However, I model it in a bit more complex way to
-see if different data types make any difference.
 
 We use _microbenchmark_ library and report timing in milliseconds.
 
@@ -51,7 +54,9 @@ We use _microbenchmark_ library and report timing in milliseconds.
 
 First we do the exercise with no actual value lookup.  This serves as
 a benchmark: in particular for small lookup tables, the actual lookup
-time may be small compared to other related overheads.  Here we 
+time may be small compared to other related overheads.  We just loop
+over all keys and pick the value corresponding to that key, using
+positional indexing.
 
 ```{r noLookup, dependson="R"}
 doNothing <- function(keys, values) {
@@ -77,14 +82,17 @@ time <- foreach(n1 = n, .combine=c) %do% {
 results <- data.frame(n=n, "no lookup"=time, check.names=FALSE)
 time
 ```
+
 We see that the theoretical lower bound is 
-`r formatC(tail(results[["match int-int"]], 1), format="f",
+`r formatC(tail(results[["no lookup"]], 1), format="f",
    digits=0)`ms.
 
 
-## The simple case: integer to integer
+## Built-in `match`
 
-### Built-in `match`
+R has built-in `match` function whose task is do do just such lookup.
+We loop over the keys in randomized order and use match to find the
+location of the corresponding key in the table.
 
 ```{r matchIntToInt, dependson="R"}
 doMatch <- function(keys, values) {
@@ -121,14 +129,18 @@ is not impressive but may work for many practical applications for
 
 R has a version of lookup table built-in in the form of named
 vectors.  We test the speed in two ways: converting numeric keys to
-character on the fly; and using character keys.
+character on the fly by using the construct
+`values[as.character(key)]`; and using character keys where we convert
+the keys in advance to a character vector, and later do just
+`values[key]`.  Note that the latter may not be possible, in case of
+integer keys.  However, quite often is is a feasible approach.
 
 The on the fly conversion ("named vectors 1") gives the following timings:
 ```{r namedVector1, dependson="R"}
 doNV1 <- function(keys, values) {
    ## find values, corresponding to keys
    for(key in keys) {
-      v <- values[as.character(keys)]
+      v <- values[as.character(key)]
    }
 }
 
@@ -137,7 +149,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
    keys <- sample(values)
                            # keys are values in random order
    values <- setNames(values, keys)
-                           # create the named vector
+                           # create named vector keys/values
    microbenchmark::microbenchmark(doNV1(sample(keys), values), times=1L) %>%
                            # find keys in random order
       as.data.frame() %>%
@@ -155,16 +167,16 @@ And the pre-conversion ("named vectors 2") results in:
 doNV2 <- function(keys, values) {
    ## find values, corresponding to keys
    for(key in keys) {
-      v <- values[as.character(keys)]
+      v <- values[keys]
    }
 }
 
 time <- foreach(n1 = n, .combine=c) %do% {
    values <- sample(1000000000L, n1)
    keys <- as.character(sample(values))
-                           # keys are values in random order, now character strings
+                           # keys are values in random order, a character strings
    values <- setNames(values, keys)
-                           # create the named vector
+                           # create named vector keys/values
    microbenchmark::microbenchmark(doNV2(sample(keys), values), times=1L) %>%
                            # find keys in random order
       as.data.frame() %>%
@@ -322,11 +334,11 @@ print(df)
 
 Finally, here is a plot with all approaches together.
 
-```{r plotAll, echo=FALSE, cache=FALSE}
+```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=12, comment=NA}
 pythonResults <- read.csv("python_results.csv") %>%
    cbind(method = "python dict")
-# cannot delete the file: if python chunk is taken from cache, it will not re-create it
-tidyr::gather(results, key=method, value=time, "no lookup":"hashed fly") %>%
+                           # cannot delete the file: if python chunk is taken from cache, it will not re-create it
+tidyr::gather(results, key=method, value=time, -n) %>%
    rbind(pythonResults) %>%
    ggplot(aes(n, time, col=method)) +
    geom_line() + geom_point() +
