@@ -22,6 +22,9 @@ type of values is probably of little importance as most of the work is presumabl
 done looking up the keys in the key tables.  However, I model it in a bit more complex way to
 see if different data types make any difference.
 
+The tests are done on `bash lscpu | grep "Model name:" | sed -e
+"s/Model name: \+//"` CPU on a single core.
+
 We create pairs of vectors to keep the values, and use the first one
 to look up the value in the second one.
 
