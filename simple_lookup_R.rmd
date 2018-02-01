@@ -63,9 +63,9 @@ doNothing <- function(keys, values) {
 
 time <- foreach(n1 = n, .combine=c) %do% {
    values <- sample(1000000000L, n1)
-   keys <- seq(along=values)
-                           # keys are just the integer indices
-   microbenchmark::microbenchmark(doNothing(sample(keys), values),
+   keys <- sample(seq(along=values))
+                           # keys are just the integer indices, in random order
+   microbenchmark::microbenchmark(doNothing(keys, values),
                                   control=list(warmup=10)) %>%
                            # find keys in random order
       as.data.frame() %>%
@@ -291,6 +291,31 @@ results[["hashed fly"]] <- time
 time
 ```
 
+### Another benchmark: do the same in python
+
+We benchmark the R approaches with the most straightforward python
+approach: using a dict.
+
+```{python, cache=TRUE}
+import time
+import random
+import pandas as pd
+ns = [10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000]
+t = []
+for n in ns:
+    values = [i for i in range(n)]
+    keys = values.copy()
+    random.shuffle(keys)
+    table = dict(zip(values, keys))
+    t0 = time.time()
+    for k in keys:
+        v = table[k]
+    t.append((time.time() - t0)*1000)
+    # in milliseconds
+df = pd.DataFrame({ "n" : ns, "time" : t })
+df.to_csv("python_results.csv", index=False)
+print(df)
+```
 
 
 # Final plot
@@ -298,16 +323,24 @@ time
 Finally, here is a plot with all approaches together.
 
 ```{r plotAll, echo=FALSE, cache=FALSE}
+pythonResults <- read.csv("python_results.csv") %>%
+   cbind(method = "python dict")
 # cannot delete the file: if python chunk is taken from cache, it will not re-create it
 tidyr::gather(results, key=method, value=time, "no lookup":"hashed fly") %>%
+   rbind(pythonResults) %>%
    ggplot(aes(n, time, col=method)) +
    geom_line() + geom_point() +
    scale_x_log10() + scale_y_log10() +
    labs(y = "time, ms")
 ```
 
-We see that indexing by names is always the slowest option.  The clear
+We see that indexing by names is always the slowest option.  Of the
+tested R methods, the clear
 winner is the hashed environment, at least up to the size of hundreds
 of thousands.  The second place depends on the table size: built-in
 `match` gives the best performance for up 10,000, for
-larger tables, `fastmatch::fmatch` is better.
+larger tables `fastmatch::fmatch` is better.  However, python manages
+to complete dictionary lookup almost at the speed where R just loops
+through the values with no lookup.  Part of it is probably related to
+less looping overhead in case of python, but dicts are also superior to any
+of the R methods tested here.
