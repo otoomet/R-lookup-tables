@@ -36,17 +36,18 @@ knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
                      message=FALSE,
                      cache=TRUE,
-                     cache.path=".table_lookup_cache/",
+                     cache.path=".simple_lookup_cache/",
                      engine.path = list(python = "/usr/bin/python3")
                      )
 library(foreach)  # for convenient loops
 library(magrittr) # 'cause I love pipes
+library(microbenchmark) # to avoid delay when using the first time
 library(data.table)
 library(ggplot2)
 ```
 
 ```{r R}
-L <- 1e5
+L <- 100000
                            # number of look-ups
 n <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
@@ -81,7 +82,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
    keys <- sample(seq(along=values))
                            # keys are just the integer indices, in random order
    shuffledKeys <- sample(keys, L, replace=TRUE)
-   microbenchmark::microbenchmark(doNothing(shuffledKeys, keys, values),
+   microbenchmark(doNothing(shuffledKeys, keys, values),
                                   times=10L,
                                   control=list(warmup=10)) %>%
                            # find keys in random order
@@ -255,7 +256,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n1)
 }
-results[["hashed fly"]] <- time
+results[["hashed env"]] <- time
 time
 ```
 
@@ -318,8 +319,11 @@ for n in ns:
     keys = values.copy()
     random.shuffle(keys)
     table = dict(zip(values, keys))
+    lk = [random.choice(keys) for _ in range(L)]
+    # keys to be looked up
     t0 = time.time()
-    for k in keys[:L]:
+    # start the clock
+    for k in lk:
         # pick first L keys--just random ones
         v = table[k]
     t.append((time.time() - t0)*1000)
@@ -329,21 +333,18 @@ df.to_csv("python_results.csv", index=False)
 print(df)
 ```
 
+### And let's take julia in too
 
-# Final plot
-
-Finally, here is a plot with all approaches together.
-
-```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=12, comment=NA}
-pythonResults <- read.csv("python_results.csv") %>%
-   cbind(method = "python dict")
-                           # cannot delete the file: if python chunk is taken from cache, it will not re-create it
-tidyr::gather(results, key=method, value=time, -n) %>%
-   rbind(pythonResults) %>%
-   ggplot(aes(n, time, col=method)) +
-   geom_line() + geom_point() +
-   scale_x_log10() + scale_y_log10() +
-   labs(y = "time, ms")
+```{julia}
+L = 100000
+ns = [10 30 100 300 1000 3000 10000 30000 100000 300000]
+t = []
+for n in ns
+    values = collect(1:n)
+    keys = randperm(n)
+    table = Dict(zip(keys, values))
+    lk = randperm(n)
+    # keys to be looked up--same keys just in different order
 ```
 
 We see that indexing by names is always the slowest option.  Of the
