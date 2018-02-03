@@ -47,7 +47,7 @@ library(ggplot2)
 ```
 
 ```{r R}
-L <- 1e5
+L <- 100000
                            # number of look-ups
 ns <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
@@ -76,7 +76,6 @@ doNothing <- function(sKeys, keys, values) {
       v <- values[key]
    }
 }
-
 time <- foreach(n = ns, .combine=c) %do% {
    values <- sample(1000000000L, n)
    keys <- sample(seq(along=values))
@@ -92,7 +91,7 @@ time <- foreach(n = ns, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n)
 }
-results <- data.frame(n=n, "no lookup"=time, check.names=FALSE)
+results <- data.frame(n=ns, "no lookup"=time, check.names=FALSE)
 time
 ```
 
@@ -129,14 +128,13 @@ time <- foreach(n = ns, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n)
 }
-results[["match int-int"]] <- time
+results[["match"]] <- time
 time
 ```
 The result--`r formatC(tail(results[["match int-int"]], 1)/1000,
    format="f", digits=0)`s 
 is not impressive but may work for many practical applications for 
-`r tail(n,1)`-element table.
-
+`r tail(ns,1)`-element table.
 
 
 ### Named vectors
@@ -179,7 +177,7 @@ time
 As one can clearly see, the approach is slow. 
 `r formatC(tail(results[["named vectors 1"]], 1)/1000, format="f",
 digits=0)`s is not a feasible speed
-for a lookup of table of size `r tail(n,1)`.
+for a lookup of table of size `r tail(ns,1)`.
 
 
 
