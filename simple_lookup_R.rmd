@@ -333,6 +333,22 @@ df.to_csv("python_results.csv", index=False)
 print(df)
 ```
 
+# Final plot
+
+Finally, here is a plot with all approaches together.
+
+```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=12, comment=NA}
+pythonResults <- read.csv("python_results.csv") %>%
+   cbind(method = "python dict")
+                           # cannot delete the file: if python chunk is taken from cache, it will not re-create it
+tidyr::gather(results, key=method, value=time, -n) %>%
+   rbind(pythonResults) %>%
+   ggplot(aes(n, time, col=method)) +
+   geom_line() + geom_point() +
+   scale_x_log10() + scale_y_log10() +
+   labs(y = "time, ms")
+```
+
 We see that indexing by names is always the slowest option.  Of the
 tested R methods, the clear
 winner is the hashed environment, at least up to the size of hundreds
