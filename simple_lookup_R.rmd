@@ -339,6 +339,28 @@ df.to_csv("python_results.csv", index=False)
 print(df)
 ```
 
+### And let's take julia in too
+
+```{julia}
+L = 100000
+ns = [10 30 100 300 1000 3000 10000 30000 100000 300000]
+t = []
+function lookup(keys, vals)
+    for k in keys
+        val = vals[k]
+    end
+end
+for n in ns
+    values = collect(1:n)
+    keys = randperm(n)
+    table = Dict(zip(keys, values))
+    lk = randperm(n)
+    # keys to be looked up--same keys just in different order
+    time = @elapsed lookup(lk, table)
+    println(time)
+end
+```
+
 # Final plot
 
 Finally, here is a plot with all approaches together.
