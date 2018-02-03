@@ -47,7 +47,7 @@ library(ggplot2)
 ```
 
 ```{r R}
-L <- 100000
+L <- 1e5
                            # number of look-ups
 n <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
