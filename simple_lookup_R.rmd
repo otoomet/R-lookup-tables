@@ -49,13 +49,13 @@ library(ggplot2)
 ```{r R}
 L <- 1e5
                            # number of look-ups
-n <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+ns <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
 ```
 
 We look up `r L` values from tables of different sizes:
 ```{r}
-n
+ns
 ```
 
 We use _microbenchmark_ library and report timing in milliseconds.
@@ -77,8 +77,8 @@ doNothing <- function(sKeys, keys, values) {
    }
 }
 
-time <- foreach(n1 = n, .combine=c) %do% {
-   values <- sample(1000000000L, n1)
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
    keys <- sample(seq(along=values))
                            # keys are just the integer indices, in random order
    shuffledKeys <- sample(keys, L, replace=TRUE)
@@ -90,7 +90,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
       extract2("time") %>%
       mean() %>%
       divide_by(1e6) %>%
-      set_names(n1)
+      set_names(n)
 }
 results <- data.frame(n=n, "no lookup"=time, check.names=FALSE)
 time
@@ -115,8 +115,8 @@ doMatch <- function(sKeys, keys, values) {
    }
 }
 
-time <- foreach(n1 = n, .combine=c) %do% {
-   values <- sample(1000000000L, n1)
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
    keys <- sample(values)
                            # keys are values in random order
    shuffledKeys <- sample(keys, L, replace=TRUE)
@@ -127,7 +127,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
       extract2("time") %>%  # extract time in nanoseconds
       mean() %>%
       divide_by(1e6) %>%
-      set_names(n1)
+      set_names(n)
 }
 results[["match int-int"]] <- time
 time
@@ -157,8 +157,8 @@ doNV1 <- function(sKeys, values) {
    }
 }
 
-time <- foreach(n1 = n, .combine=c) %do% {
-   values <- sample(1000000000L, n1)
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
    keys <- sample(values)
                            # keys are values in random order
    values <- setNames(values, keys)
@@ -170,7 +170,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
       extract2("time") %>%
       mean() %>%
       divide_by(1e6) %>%
-      set_names(n1)
+      set_names(n)
 }
 results[["named vectors"]] <- time
 time
@@ -197,8 +197,8 @@ doFMatch <- function(sKeys, keys, values) {
    }
 }
 
-time <- foreach(n1 = n, .combine=c) %do% {
-   values <- sample(1000000000L, n1)
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, ns)
    keys <- sample(values)
                            # keys are values in random order
    shuffledKeys <- sample(keys, L, replace=TRUE)
@@ -209,7 +209,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
       extract2("time") %>%  # extract time in nanoseconds
       mean() %>%
       divide_by(1e6) %>%
-      set_names(n1)
+      set_names(n)
 }
 results[["fmatch int-int"]] <- time
 time
@@ -237,8 +237,8 @@ doHEnv <- function(sKeys, values) {
       v <- values[[as.character(key)]]
    }
 }
-time <- foreach(n1 = n, .combine=c) %do% {
-   values <- sample(1000000000L, n1)
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
    keys <- sample(values)
                            # we need character values to access the environment
    values <- setNames(values, keys) %>%
@@ -254,7 +254,7 @@ time <- foreach(n1 = n, .combine=c) %do% {
       extract2("time") %>%  # extract time in nanoseconds
       mean() %>%
       divide_by(1e6) %>%
-      set_names(n1)
+      set_names(n)
 }
 results[["hashed env"]] <- time
 time
@@ -278,8 +278,8 @@ doDT <- function(sKeys, dtable) {
       v <- dtable[key, values]
    }
 }
-time <- foreach(n1 = n, .combine=c) %do% {
-   values <- sample(1000000000L, n1)
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
    keys <- sample(values)
                            # we need character values to access the environment
    dtable <- data.table(keys, values, key="keys")
@@ -291,15 +291,21 @@ time <- foreach(n1 = n, .combine=c) %do% {
       extract2("time") %>%  # extract time in nanoseconds
       mean() %>%
       divide_by(1e6) %>%
-      set_names(n1)
+      set_names(n)
 }
 results[["data.table"]] <- time
 time
 ```
 
-Data tables appear to be surprisingly slow.  I guess this is because
-`[.data.table` has quite a bit of overhead.  If this is the case, one may expect to see a substantial speed improvement with vectorized lookups.
-
+Data tables appear to be surprisingly slow despite the fact that the
+indexing is
+[advertised as a "incredibly fast" lookup](https://cran.r-project.org/web/packages/data.table/vignettes/datatable-keys-fast-subset.html).
+I guess this is because
+`[.data.table` has quite a bit of overhead.  If this is the
+case, one may expect to see a substantial speed improvement with 
+vectorized lookups. Even in current form, data tables may still be 
+substantially faster than the corresponding lookup using data frames, however, 
+this is out of scope here.
 
 
 ### Another benchmark: do the same in python
@@ -346,7 +352,10 @@ tidyr::gather(results, key=method, value=time, -n) %>%
    ggplot(aes(n, time, col=method)) +
    geom_line() + geom_point() +
    scale_x_log10() + scale_y_log10() +
-   labs(y = "time, ms")
+   labs(title = paste("Time to look up", L, "keys from dictionary"),
+        y = "time, ms",
+        x = "dictionary size") +
+   theme(text = element_text(size=14))
 ```
 
 We see that indexing by names is always the slowest option.  Of the
