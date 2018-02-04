@@ -14,18 +14,18 @@ output:
 # Setup
 
 In [an earlier post](https://otoomet.github.io/table_lookup_in_R.html)
-I compared the time for looking up values in a 2D 
-table, indexed by different type of objects.  Now let's take a step
-backward and analyze a simple 1D value lookup.  I am focusing on
-integer-integer lookup, i.e. both keys and values are integers.  The
-type of values is probably of little importance as most of the work is presumably
-done looking up the keys in the key tables.  However, I model it in a bit more complex way to
-see if different data types make any difference.  The second major
-feature of the test is that I do elementwise lookups, i.e. I look up
-single integer key values instead of vectors of keys.
+I compared the time for looking up values in a 2D table, indexed by
+different type of objects.  Now let's take a step backward and analyze
+a simple 1D value lookup.  I am focusing on integer-integer lookup,
+i.e. both keys and values are integers.  The type of values is
+probably of little importance--at least if these are atomic data
+types--as most of the work is presumably done looking up the keys in
+the key tables.  I am also solely interested in elementwise lookups, i.e. I look up single
+integer key instead of vector of keys.
 
 The tests are done on
-`r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'", intern=TRUE)` CPU on a single core.
+`r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'",
+intern=TRUE)` on a single core.
 
 We create pairs of vectors to keep the values, and use the first one
 to look up the value in the second one.
@@ -97,16 +97,17 @@ time
 
 We see that the theoretical lower bound is 
 `r formatC(tail(results[["no lookup"]], 1), format="f",
-   digits=0)`ms.
+   digits=0)`ms.  This time does not depend on the the lookup table
+size as the use plain integer indexing.
 
 
 ## Built-in `match`
 
-R has built-in `match` function whose task is do do just such lookup.
+R has built-in `match` function whose task is to do just such lookup.
 We loop over the keys in randomized order and use match to find the
 location of the corresponding key in the table.
 
-```{r matchIntToInt, dependson="R"}
+```{r match, dependson="R"}
 doMatch <- function(sKeys, keys, values) {
    ## find values, corresponding to keys
    for(key in sKeys) {
@@ -114,7 +115,7 @@ doMatch <- function(sKeys, keys, values) {
    }
 }
 
-time <- foreach(n = ns, .combine=c) %do% {
+timeMatch <- foreach(n = ns, .combine=c) %do% {
    values <- sample(1000000000L, n)
    keys <- sample(values)
                            # keys are values in random order
@@ -128,10 +129,9 @@ time <- foreach(n = ns, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n)
 }
-results[["match"]] <- time
-time
+timeMatch
 ```
-The result--`r formatC(tail(results[["match"]], 1)/1000,
+The result--`r formatC(tail(timeMatch, 1)/1000,
    format="f", digits=0)`s 
 is not impressive but may work for many practical applications for 
 `r tail(ns,1)`-element table.
@@ -155,7 +155,7 @@ doNV1 <- function(sKeys, values) {
    }
 }
 
-time <- foreach(n = ns, .combine=c) %do% {
+timeNV <- foreach(n = ns, .combine=c) %do% {
    values <- sample(1000000000L, n)
    keys <- sample(values)
                            # keys are values in random order
@@ -170,12 +170,11 @@ time <- foreach(n = ns, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n)
 }
-results[["named vectors"]] <- time
-time
+timeNV
 ```
 
 As one can clearly see, the approach is slow. 
-`r formatC(tail(results[["named vectors 1"]], 1)/1000, format="f",
+`r formatC(tail(timeNV, 1)/1000, format="f",
 digits=0)`s is not a feasible speed
 for a lookup of table of size `r tail(ns,1)`.
 
@@ -213,7 +212,7 @@ results[["fmatch"]] <- time
 time
 ```
 The result--`r formatC(tail(results[["fmatch"]], 1)/1000,
-   format="f", digits=1)`s--seems to be fair speed, potentially for
+   format="f", digits=1)`s--seems to be a fair speed, potentially for
    most applications.
 
 
@@ -258,16 +257,16 @@ results[["hashed env"]] <- time
 time
 ```
 
-So far, hashed environments appear to be the faster than `fmatch` for
-less than 100,000 looup.  However, at our maximum size, the time
+So far, hashed environments appear to be the fastest approach.  At the
+largest table, the time
 `r formatC(tail(results[["hashed env"]], 1)/1000, 
-   format="f", digits=1)`s slightly exceeds that of `fmatch`.
+   format="f", digits=1)`s is about twice as fast as for `fmatch`.
    
 
 ### Data.tables
 
-data.table library offers an alternative to data frame that includes
-built-in index.  We use the index (as key) lookup of a the value from data.table
+data.table library offers an alternative to data frame and contains
+built-in ordering by index.  We use the index (as key) lookup of a the value from data.table
 
 ```{r data.table, dependson="R"}
 doDT <- function(sKeys, dtable) {
@@ -295,21 +294,20 @@ results[["data.table"]] <- time
 time
 ```
 
-Data tables appear to be surprisingly slow despite the fact that the
-indexing is
+Data tables appear to be surprisingly slow despite the 
+indexing being
 [advertised as a "incredibly fast" lookup](https://cran.r-project.org/web/packages/data.table/vignettes/datatable-keys-fast-subset.html).
 I guess this is because
 `[.data.table` has quite a bit of overhead.  If this is the
 case, one may expect to see a substantial speed improvement with 
-vectorized lookups. Even in current form, data tables may still be 
+vectorized lookups. Even in the current form, data tables may still be 
 substantially faster than the corresponding lookup using data frames, however, 
-this is out of scope here.
+such a test is out of scope in this post.
 
 
 ### Another benchmark: do the same in python
 
-We benchmark the R approaches with the most straightforward python
-approach: using a dict.
+Finally, let's leave R and use the standard dict in python.
 
 ```{python, cache=TRUE}
 import time
@@ -336,12 +334,16 @@ df = pd.DataFrame({ "n" : ns, "time" : t })
 df.to_csv("python_results.csv", index=False)
 print(df)
 ```
+Not surprisingly, python is at least a magnitude faster than R.
 
-# Final plot
+
+# Conclusions and the final plot
 
 Finally, here is a plot with all approaches together.
 
-```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=12, comment=NA}
+```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=10, comment=NA}
+results[["match"]] <- timeMatch
+results[["named vectors"]] <- timeNV
 pythonResults <- read.csv("python_results.csv") %>%
    cbind(method = "python dict")
                            # cannot delete the file: if python chunk is taken from cache, it will not re-create it
@@ -356,13 +358,18 @@ tidyr::gather(results, key=method, value=time, -n) %>%
    theme(text = element_text(size=14))
 ```
 
-We see that indexing by names is always the slowest option.  Of the
+We see that indexing by names is always inferior to the `match`.  Of the
 tested R methods, the clear
-winner is the hashed environment, at least up to the size of hundreds
+winner is the hashed environment, at least up to the table size of hundreds
 of thousands.  The second place depends on the table size: built-in
-`match` gives the best performance for up 10,000, for
-larger tables `fastmatch::fmatch` is better.  However, python manages
-to complete dictionary lookup almost at the speed where R just loops
+`match` gives better performance for up 10,000, for
+larger tables `fastmatch::fmatch` is better.
+
+The "best" is relative though.  Python manages
+to complete dictionary lookup in only little more time than R needs
+just to loop
 through the values with no lookup.  Part of it is probably related to
-less looping overhead in case of python, but dicts are also superior to any
-of the R methods tested here.
+less looping overhead in python, but dicts are probably also superior
+data structures compared to all the R methods tested here.  It remains to be seen if R manages to
+claim back some of the speed difference when using vectorized
+lookups. 
