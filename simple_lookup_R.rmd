@@ -47,7 +47,7 @@ library(ggplot2)
 ```
 
 ```{r R}
-L <- 100000
+L <- 1e5
                            # number of look-ups
 ns <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
                            # timing repetitions used later
@@ -131,7 +131,7 @@ time <- foreach(n = ns, .combine=c) %do% {
 results[["match"]] <- time
 time
 ```
-The result--`r formatC(tail(results[["match int-int"]], 1)/1000,
+The result--`r formatC(tail(results[["match"]], 1)/1000,
    format="f", digits=0)`s 
 is not impressive but may work for many practical applications for 
 `r tail(ns,1)`-element table.
@@ -187,7 +187,7 @@ Unlike built-in `match` with it's sequential lookup,
 `fastmatch::fmatch` builds the lookup hashtable at the first iteration, and later
 uses it.  It results in dramatically better times for long tables.
 
-```{r fmatchIntToInt, dependson="R"}
+```{r fmatch, dependson="R"}
 doFMatch <- function(sKeys, keys, values) {
    ## find values, corresponding to keys
    for(key in sKeys) {
@@ -209,10 +209,10 @@ time <- foreach(n = ns, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n)
 }
-results[["fmatch int-int"]] <- time
+results[["fmatch"]] <- time
 time
 ```
-The result--`r formatC(tail(results[["fmatch int-int"]], 1)/1000,
+The result--`r formatC(tail(results[["fmatch"]], 1)/1000,
    format="f", digits=1)`s--seems to be fair speed, potentially for
    most applications.
 
