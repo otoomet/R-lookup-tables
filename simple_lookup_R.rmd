@@ -106,7 +106,7 @@ R has built-in `match` function whose task is do do just such lookup.
 We loop over the keys in randomized order and use match to find the
 location of the corresponding key in the table.
 
-```{r matchIntToInt, dependson="R"}
+```{r match, dependson="R"}
 doMatch <- function(sKeys, keys, values) {
    ## find values, corresponding to keys
    for(key in sKeys) {
@@ -114,7 +114,7 @@ doMatch <- function(sKeys, keys, values) {
    }
 }
 
-time <- foreach(n = ns, .combine=c) %do% {
+timeMatch <- foreach(n = ns, .combine=c) %do% {
    values <- sample(1000000000L, n)
    keys <- sample(values)
                            # keys are values in random order
@@ -128,8 +128,7 @@ time <- foreach(n = ns, .combine=c) %do% {
       divide_by(1e6) %>%
       set_names(n)
 }
-results[["match"]] <- time
-time
+timeMatch
 ```
 The result--`r formatC(tail(results[["match"]], 1)/1000,
    format="f", digits=0)`s 
@@ -339,7 +338,8 @@ print(df)
 
 ### And let's take julia in too
 
-```{julia}
+```{julia julia}
+# seems like knitr/julia 0.4.5 do not talk together.
 L = 100000
 ns = [10 30 100 300 1000 3000 10000 30000 100000 300000]
 t = []
@@ -364,6 +364,7 @@ end
 Finally, here is a plot with all approaches together.
 
 ```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=12, comment=NA}
+results[["match"]] <- timeMatch
 pythonResults <- read.csv("python_results.csv") %>%
    cbind(method = "python dict")
                            # cannot delete the file: if python chunk is taken from cache, it will not re-create it
