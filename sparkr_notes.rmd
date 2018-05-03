@@ -35,7 +35,7 @@ setLogLevel("WARN")
 
 # Introduction
 
-SparkR is a very valuable approach to big data handling.
+SparkR is a very valuable approach when working with big data.
 Unfortunately it's documentation is rather sparse.  Here I have
 collected a number of solutions and explanations I have been
 struggling myself and hope others may find useful.
@@ -209,12 +209,13 @@ guarantee that `groupBy` preserves the order (see
 
 
 
-# How to Rename Columns: `rename` and `withColumnRenamed`
+# How to Rename Columns
 
 There are two built-in functions for renaming.  `rename` expects a
 list of arguments in the form of `newName = existingColumn` (after the
-data frame argument).  Note: this is quoted or unquoted name = column, not
-column name.  This is
+data frame argument).  Note: this is quoted or unquoted name = column,
+the right hand side must not be just
+a column name.  This is
 perhaps the easiest way to rename variables:
 ```{r}
 data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
@@ -283,6 +284,92 @@ not work
 
 (2.2.1)
 
+
+# Handling Dates
+
+## Timestamps
+
+It is not immediately obvious how to handle dates inside spark.  In
+CSV files the
+date data is usually in some sort of _yyyy-mm-dd_ form which will be
+read as character string.  The spark internal format of choice would
+be _utc\_timestamp_, the timestamp in UTC time zone.  The way there
+may be slightly circuituous:
+
+1. Convert the character representation (say, column "date") into
+_unix\_timestamp_ with
+```r
+unix_timestamp(column("date"), "MM/dd/yyyy hh:mm:ss")
+```
+Note: spark expects [java date formatting](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html), not `strptime` date
+formatting. 
+
+2. As _to\_utc\_timestamp_ we will use below expects _timestamp_ class, not
+_unix\_timestamp_, one has to cast it into _timestamp_:
+```r
+cast(column("date"), "timestamp")
+```
+
+3. Finally, we can convert the column into _utc\_timestamp_ using the
+correct timezone for the original data:
+```r
+to_utc_timestamp(column("date"), "AFT")
+                           # use AFT time zone
+```
+**Warning**: if the time zone acronym is unknown, it will be silently ignored. 
+
+An example script that performs all these tasks:
+```{r dateConvertExample1, cache=FALSE}
+data <- createDataFrame(data.frame(date=c("3/22 2014 18:44:33", "5/3 2018 11:04:11")))
+data2 <- data %>%
+   withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss")) %>%
+   withColumn("date", cast(column("date"), "timestamp")) %>%
+   withColumn("date", to_utc_timestamp(column("date"), "Asia/Kabul"))
+data2 %>%
+   collect()
+```
+Indeed, UTC time is less than Kabul time by 4 hours 30 mins.
+
+The above can also be achieved in a more compact manner as:
+```{r dateConvertExample2, dependson="dateConvertExample1"}
+data %>%
+   withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss") %>%
+                      cast("timestamp") %>%
+                      to_utc_timestamp("Asia/Kabul")
+              ) %>%
+   collect()
+```
+
+(spark 2.1.2)
+
+## Formatting dates
+
+When we want to convert a _utc\_timestamp_ back to string representation in UTC, we
+can use `date_format(column, format string)` (note: we need 
+[java format symbols](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html) again).
+For instance:
+```{r dateFormatExample1, dependson="dateConvertExample1"}
+data2 %>%
+   withColumn("date2", date_format(column("date"), "yyyyMMdd")) %>%
+   collect()
+```
+
+Alternatively, one can achieve a similar result with extractor
+functions `year`, `month`, `dayofmonth`, `hour`, `minute`, `second`.  For
+instance: 
+```{r dateFormatExample2, dependson="dateConvertExample1"}
+data2 %>%
+   withColumn("date2", year(column("date"))*10000 +
+                       month(column("date"))*100 +
+                       dayofmonth(column("date"))) %>%
+   collect()
+```
+**Warning**: you must put the column in the first position in `withColumn`
+arithmetic expression.  A literal number in the first position, such
+as `10000*year(column("date"))` gives
+an error.
+
+(spark 2.2.0)
 
 
 # other notes (incomplete)
@@ -360,15 +447,6 @@ loadDF(fName, source="csv", header="true", sep=",")
    default: no header, source not csv, sep=','
 
 (2.2.1)
-
-## Timestamps
-
-unix\_timestamp(column, format) gives 'date' class
-to\_utc\_timestamp() expects 'timestamp' class
-you have to cast unix\_timestamp() to 'timestamp'
-
-(spark 2.2.1)
-
 
 
 ## pivot

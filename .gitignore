@@ -1,6 +1,6 @@
 # History files
 .Rhistory
-.Rapp.history
+.juliahistory
 
 # Session Data files
 .RData
@@ -42,3 +42,4 @@ vignettes/*.pdf
 # results
 *.html
 *.csv
+
