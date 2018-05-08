@@ -58,12 +58,11 @@ entry is provided (2.2.1).
 ## Compression Codecs
 
 By default, spark compresses parquet files by snappy codec which
-creates rather large temporary files.  You have
-to configure it to use something else, such as "gzip".  The codec must
-be specificed when initiatin spark session through _sparkConfig_
+creates rather large temporary files.  You have to configure it explicitly to use something else, such as "gzip".  The codec must
+be specificed during the spark session initialization through _sparkConfig_
 argument.  _sparkConfig_ is a list of configuration options in the
 form of _name_ = _value_ and name for parquet compression is
-_spark.sql.parquet.comression.codec_.  Value must be a string.  For instance:
+_spark.sql.parquet.compression.codec_.  Value must be a string.  For instance:
 
 ```r
 ss <- sparkR.session(master = "local[8]",
@@ -75,6 +74,25 @@ ss <- sparkR.session(master = "local[8]",
 Note: this must be done when spark session is initialized, later calls
 to `sparkR.conf` do not work.  Neither can you configure spark before
 you have initialized the sparkSession.
+
+
+## Temporary Directories
+
+Spark stores quite a bit of temporary data on disk so you should
+ensure you have plenty of disk space.  The location of temporary
+folders can be set in the environment variable `SPARK_LOCAL_DIRS` as a
+comma-separated list of directories:
+```bash
+SPARK_LOCAL_DIRS="$HOME/tmp,/tmp"
+```
+This creates temporary folders in two locations, one in `$HOME/tmp` and another in
+`/tmp`.  The folders appear in pairs, names like
+`blockmgr-6e392c2c...` and `spark-f0e4221e...`.
+
+Spark splits data to be saved roughly equally onto both of these
+devices.  This means, in particular, that when one of the devices is
+full, spark fails even if there is still plenty of space on the
+other (2.1.2).
 
 
 # Merging and Lazy Evaluation
