@@ -442,7 +442,29 @@ an error.
 (spark 2.2.0)
 
 
-# other notes (incomplete)
+# String Operations
+
+## startsWith, endsWith
+
+These are utility functions that test if a string column starts or
+ends with a given substring.  These return a logical column.
+
+```{r startsWith, eval=FALSE}
+startsWith(column, substring)
+endsWith(column, substring)
+```
+
+Example:
+```{r endsWithExample}
+df <- data.frame(x=c("foo", "bar")) %>%
+   createDataFrame()
+df %>%
+   withColumn("y", endsWith(column("x"), "oo")) %>%
+   collect()
+```
+
+
+# other notes (draft)
 
 ## Web Monitoring Ports
 
@@ -515,10 +537,6 @@ argument
 
 don't pivot on groupBy columns
 
-
-## startsWith
-
-startsWith(column, prefix)
 
 
 
