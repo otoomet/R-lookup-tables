@@ -95,6 +95,55 @@ full, spark fails even if there is still plenty of space on the
 other (2.1.2).
 
 
+# Data Input
+
+## How to read csv files
+
+CSV files are one of the most common and versatile forms of data.
+SparkR reads these pretty well but unfortunately, the documentation is
+not good enough to get started.  The basic syntax is:
+
+```{R loadDF, eval=FALSE}
+loadDF(fName,
+       source="csv",
+       header="true",
+       sep=",")
+```
+
+The most important arguments are:
+
+* `fName`:  the file name.  The unix home directory marker `~` does
+  not seem to work (it is taken as a literal character in the file
+  name), unlike in ordinary R.  However, there are a number of good
+  news:
+    * compressed files, at least `.bz2`,  are decompressed
+      transparently (2.2.0).
+	* `fName` can be a shell pattern corresponding to multiple files,
+	  such as `dir/*.csv`.
+	  In that case all these files are read and stacked
+      into the resulting data frame.  
+	* `fName` can also be the folder's name (both with and
+      without the trailing slash) in which case all
+      files in that folder are read.  Note: in this case `loadDF` loads all
+      the files in that folder, including non-csv ones.
+* `source`: should be "csv" here
+* `header`: whether the file contains the first line as column names.
+  Defaults to "false" which reads the eventual header names as the
+  first line, and names columns to `_c0`, `_c1` etc. (2.2.0).  Note:
+  you have to specify java-ish "true" and "false" (in quotes) here, not R-ish
+  `TRUE` and `FALSE`.
+* `sep`: field separator, default ",".
+* there are more arguments.
+
+
+`loadDF` loads everything as string type, you may want to convert the
+columns afterwards (this can probably also be achieved by schemas).
+
+There is an alternative function, `read.df`, that differs from loadDF
+by the default arguments.
+
+
+
 # Merging and Lazy Evaluation
 
 Spark's lazy evaluation makes debugging hard, the code may fail
@@ -108,24 +157,27 @@ org.apache.spark.sql.AnalysisException: Reference 'b' is ambiguous, could be: b#
 ```
 
 For instance:
-```{r, eval=FALSE}
+```{r mergeFails, eval=FALSE}
 foo <- createDataFrame(data.frame(a=1:2, b=11:12))
 bar <- createDataFrame(data.frame(a=1:2, b=21:22))
-foobar <- foo %>%
+foo %>%
    groupBy("a", "b") %>%
    count() %>%
    merge(bar, by="a") %>%
-   rename(a = column("a_x"))
+   rename(a = column("a_x")) %>%
+   collect()
 ```
 
 fails with error `Caused by: org.apache.spark.sql.AnalysisException:
 Reference 'b' is ambiguous, could be: b#3, b#10.;`.  The problem is
-multiple instance of `b` introduced through merge, but failure occurs
+multiple instance of `b` introduced through merge, but failure seems
+to occur
 at `groupBy("a", "b")`.
 
-However, a slightly simpler plan still works and demonstrates what
+However, a slightly simpler plan---just removing the `rename` part
+that seems unrelated to the problem---still works and demonstrates what
 happens at merge:
-```{r}
+```{r mergeWorks}
 foo <- createDataFrame(data.frame(a=1:2, b=11:12))
 bar <- createDataFrame(data.frame(a=1:2, b=21:22))
 foo %>%
@@ -147,7 +199,7 @@ Many common tasks require ordering by group.  SparkR has multi-column
 ordering function (`arrange`) and multi-column grouping (`groupBy`).
 Unfortunately, these two do not play together.  Assume we have
 temperature data
-```{r, cache=FALSE}
+```{r temperatureData, cache=FALSE}
 temp <- data.frame(month = c("Nov", "Nov", "Dec", "Dec"), day=c(1,15,1,15), temp=c(14,12,10,12)) %>%
    createDataFrame()
 temp %>%
@@ -459,19 +511,14 @@ argument
 (spark 2.2)
 
 
-## reading csv files
-
-loadDF(fName, source="csv", header="true", sep=",")
-   default: no header, source not csv, sep=','
-
-(2.2.1)
-
-
 ## pivot
 
 don't pivot on groupBy columns
 
 
+## startsWith
+
+startsWith(column, prefix)
 
 
 
