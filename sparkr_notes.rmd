@@ -538,6 +538,22 @@ argument
 don't pivot on groupBy columns
 
 
+## dapply
+
+the chunks fed to dapply are roungly of the size \#obs/\#partitions. nParallel
+dapply processes are run in parallel.
+
+If you get error message `error in parallel:::mcfork unable to create
+a pipe` then you may have run out of processes.  Spark 2.1.2 and R
+3.5.0 did not play nicely with dapply leaving zombies, until you run
+out of the available processes.
+In this case fewer partitions may help.  Issue seems to be gone when
+switching to spark 2.3.1.
+
+One runs a separate dapply
+process for each partition?  At least the number of dapply invocations
+seems to
+equal the number of partitions.
 
 
 ```{r finalize, include=FALSE}
