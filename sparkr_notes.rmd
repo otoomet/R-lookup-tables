@@ -76,6 +76,22 @@ to `sparkR.conf` do not work.  Neither can you configure spark before
 you have initialized the sparkSession.
 
 
+## Java heap memory
+
+Spark driver memory can be set when creating the spark session with
+the `spark.driver.memory` option.  It takes character values like `"4g"`:
+
+```{r javaHeapMemory, eval=FALSE}
+ss <- sparkR.session(master = "local[2]",
+                     appName = "sparkNotes",
+                     sparkConfig=list(spark.driver.memory="8g")
+                     )
+```
+If this is too small, you get java out-of-memory errors related to
+java heap space.
+
+
+
 ## Temporary Directories
 
 Spark stores quite a bit of temporary data on disk so you should
