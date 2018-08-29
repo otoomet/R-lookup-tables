@@ -130,7 +130,7 @@ The most important arguments are:
 * `header`: whether the file contains the first line as column names.
   Defaults to "false" which reads the eventual header names as the
   first line, and names columns to `_c0`, `_c1` etc. (2.2.0).  Note:
-  you have to specify java-ish "true" and "false" (in quotes) here, not R-ish
+  you have to specify java-ish `"true"` and `"false"` (in quotes) here, not R-ish
   `TRUE` and `FALSE`.
 * `sep`: field separator, default ",".
 * there are more arguments.
@@ -142,6 +142,19 @@ columns afterwards (this can probably also be achieved by schemas).
 There is an alternative function, `read.df`, that differs from loadDF
 by the default arguments.
 
+
+## Parquet files
+
+```{R read.parquet, eval=FALSE}
+read.parquet(file)
+```
+
+* `file`: file name, actually the name of the folder where parquet
+  holds it's files
+    * If you want to read all parquet file (or rather folders) in a
+      directory, you have to specify `file` as `path/to/directory/*`.
+      If you leave out the trailing wildcard `*`, you get
+      an error _Unable to infer schema for Parquet_ (2.3.1).
 
 
 # Merging and Lazy Evaluation
