@@ -83,7 +83,6 @@ the `spark.driver.memory` option.  It takes character values like `"4g"`:
 
 ```{r javaHeapMemory, eval=FALSE}
 ss <- sparkR.session(master = "local[2]",
-                     appName = "sparkNotes",
                      sparkConfig=list(spark.driver.memory="8g")
                      )
 ```
@@ -173,7 +172,54 @@ read.parquet(file)
       an error _Unable to infer schema for Parquet_ (2.3.1).
 
 
-# Merging and Lazy Evaluation
+# Merging 
+
+## Merging and joining
+
+SparkR features two similar functions: `merge` and `join`.  They do
+not behave in quite the same manner.
+
+Merge syntax is rather similar to that of base::merge:
+```{r, eval=FALSE}
+merge(x, y, by, suffixes)
+```
+
+* `x`, `y` are data frame to be merged.
+* `by` is a vector of key columns, by default columns with similar
+  name in both data frames.  
+    * `by` columns can be of different type, for instance integer and
+      double columns still match.
+* `suffixes` is a character vector of 2 specifying different suffixes
+  for `x` and `y` to make unique names.
+    * Even if you want to retain just one version of the variable with
+      it's original name, you cannot specify something like
+      `suffices=c("", "_y")`.  You get an error.  (2.2.0)
+
+
+### Merge renames variables (2.2.0)
+
+If merging two data frames on a column of similar name, `merge` creates new variables
+like `foo_x` and `foo_y` according to the respective origin data
+frame.  For instance:
+```{r mergeRenames}
+foo <- createDataFrame(data.frame(a=1:2, b=11:12, c=c("a", "b")))
+bar <- createDataFrame(data.frame(a=1:2, b=21:22, d=c("x", "y")))
+merge(foo, bar, by="a") %>% collect()
+```
+If, instead of `by`, you specify both `by.x` and `by.y`, then it also
+renames the `b`-s:
+```{r mergeRenames2, dependson="mergeRenames"}
+merge(foo, bar, by.x="a", by.y="a") %>% collect()
+```
+
+Join, in turn, does not rename but still keeps both version of the join column in the data:
+```{r joinDoesntRename, dependson="mergeRenames"}
+join(foo, bar, foo$a == bar$a) %>% collect()
+```
+
+
+
+## Merging and lazy evaluation
 
 Spark's lazy evaluation makes debugging hard, the code may fail
 before it even reaches the problematic line.
