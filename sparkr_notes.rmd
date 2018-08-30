@@ -172,6 +172,20 @@ read.parquet(file)
       an error _Unable to infer schema for Parquet_ (2.3.1).
 
 
+# General operations
+
+## Accessing columns
+
+One can access single columns with the `$`-operator and the `column`
+function.  The `$`-operator works in a fairly similar manner than for
+ordinary data frames.  Note that in case of piping where your
+intermediate dataframe does not have a name, you may access the
+columns with `.$` way like `.$foo`.
+
+Function `column` is an alternative, it takes column name as a
+character: `column("foo")`.
+
+
 # Merging 
 
 ## Merging and joining
