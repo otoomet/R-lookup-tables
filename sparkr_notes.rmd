@@ -41,6 +41,44 @@ collected a number of solutions and explanations I have been
 struggling myself and hope others may find useful.
 
 
+# General concepts
+
+## RDD
+
+The central data structure in spark is _Resilient Distributed Dataset_
+(RDD).  Resilient means it can be recovered using an earlier stage and
+the _RDD lineage_ information.  
+
+So RDD is not just dataset: a number in RDD is not just a number, but
+a number plus information where this number comes from.
+
+
+### Checkpointing
+
+As one operates repeatedly on the same data, the RDD lineage may grow
+without limits.  This happens, for instance, if you add data to an RDD
+in a loop, and each time also filter out certain observations.  This
+manifests with RDD operations getting slower and slower, one may also get
+`java.lang.StackOverflowError`-s.  A very valuable resource for
+seeing and debugging the RDD lineages is the web monitoring port
+4040 (the default value).  
+
+A way to _break the lineage_ is to use _checkpointing_.  Checkpointing
+saves the current dataframe as "just data", without any historical
+information.  All the following execution plans take the resulting
+dataframe as a blank sheet (well, blank in terms of lineage, not data
+content!). 
+
+Checkpointing can be done like this:
+```{r, eval=FALSE}
+setCheckpointDir("/tmp")
+                           # note: have to set checkpoint dir
+df2 <- checkpoint(df1)
+```
+Now `df2` is a lineage-less dataframe.
+
+
+
 # Configuration
 
 ## Getting Run-Time Configuration
@@ -230,6 +268,11 @@ Join, in turn, does not rename but still keeps both version of the join column i
 ```{r joinDoesntRename, dependson="mergeRenames"}
 join(foo, bar, foo$a == bar$a) %>% collect()
 ```
+
+### Merging and "trivial" join conditions
+
+As stressed above, RDD is not just data but also information about how
+the data was created.  `merge` can use some of this lineage information.
 
 
 
@@ -478,7 +521,8 @@ to_utc_timestamp(column("date"), "AFT")
 **Warning**: if the time zone acronym is unknown, it will be silently ignored. 
 
 An example script that performs all these tasks:
-```{r dateConvertExample1, cache=FALSE}
+```{r dateConvertExample1
+}
 data <- createDataFrame(data.frame(date=c("3/22 2014 18:44:33", "5/3 2018 11:04:11")))
 data2 <- data %>%
    withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss")) %>%
@@ -605,12 +649,6 @@ remains in memory and it causes errors.
 ## creating empty spark dataframe
 
 empty R data.frame %>% createDataFrame gives out-of-bounds errors
-
-
-## RDD lineage
-
-java.lang.StackOverflowError may be caused by rdd lineage getting too
-long 
 
 
 ## Reading Data
