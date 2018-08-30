@@ -272,7 +272,32 @@ join(foo, bar, foo$a == bar$a) %>% collect()
 ### Merging and "trivial" join conditions
 
 As stressed above, RDD is not just data but also information about how
-the data was created.  `merge` can use some of this lineage information.
+the data was created.  `merge` can use some of this lineage
+information.  In particular, if the key column is created through
+`lit()` constant, it refuses to merge.  See the following examples:
+```{r mergeNontrivial}
+foo <- data.frame(a=1:2, b=3:4) %>% createDataFrame()
+foo %>% collect()
+bar <- data.frame(c=5:6, a=c(0L,0L)) %>% createDataFrame()
+bar %>% collect()
+merge(foo, bar, all.x=TRUE) %>% collect()
+```
+Here we create two dataframes, `foo` and `bar` and merge these on
+column `a`.  As there are no common key values, the variables
+inherited from `bar` are all missing.  This is to be expected.
+
+Now let's modify this example with literal constants:
+```{r mergeTrivialData}
+baz <- data.frame(c=5:6) %>% createDataFrame() %>% withColumn("a", lit(0))
+baz %>% collect()
+```
+So the `baz` dataframe looks the same as `bar` above.  However, now
+merge knows that the keys are just constants:
+```{r mergeTrivial, eval=FALSE}
+merge(foo, baz, all.x=TRUE) %>% collect()
+```
+fails with _Join condition is missing or trivial_ error.  Remember:
+dataframe is not just data but also the lineage information!
 
 
 
