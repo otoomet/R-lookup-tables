@@ -329,6 +329,56 @@ data %>%
    collect()
 ```
 
+## Working with strings
+
+### substrings with `substr`
+
+Substrings can be created with `substr`.  It's syntax is simple:
+```{r substr, eval=FALSE}
+substr(x, start, end)
+```
+
+* `x` is a column
+* `start`, `end` are the (1-based) start and end positions in the
+  string.  `start` and `end` must be specified, you cannot leave one
+  out to take everything.  `Inf` is not allowed either.
+  
+Example:
+```{r substrExample}
+df <- data.frame(names=c("Barnier", "Beto")) %>%
+   createDataFrame()
+df %>% withColumn("x", substr(column("names"), 3, 20)) %>%
+   collect()
+```
+This extracts characters 3 to 30 (i.e. from 3 till end) from these
+names.  
+  
+**Warning**: in SparkR < 2.3.0, start position was to be
+given _one past_ the first character to be extracted.  So in the
+example above, one has to use `substr(column("names"), 4, 20)`
+
+
+### startsWith, endsWith
+
+These are utility functions that test if a string column starts or
+ends with a given substring.  These return a logical column.
+
+```{r startsWith, eval=FALSE}
+startsWith(column, substring)
+endsWith(column, substring)
+```
+
+Example:
+```{r endsWithExample}
+df <- data.frame(x=c("foo", "bar")) %>%
+   createDataFrame()
+df %>%
+   withColumn("y", endsWith(column("x"), "oo")) %>%
+   collect()
+```
+
+
+
 
 # Merging 
 
@@ -664,26 +714,6 @@ an error.
 (spark 2.2.0)
 
 
-# String Operations
-
-## startsWith, endsWith
-
-These are utility functions that test if a string column starts or
-ends with a given substring.  These return a logical column.
-
-```{r startsWith, eval=FALSE}
-startsWith(column, substring)
-endsWith(column, substring)
-```
-
-Example:
-```{r endsWithExample}
-df <- data.frame(x=c("foo", "bar")) %>%
-   createDataFrame()
-df %>%
-   withColumn("y", endsWith(column("x"), "oo")) %>%
-   collect()
-```
 
 
 # other notes (draft)
