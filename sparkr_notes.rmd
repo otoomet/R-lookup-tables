@@ -216,7 +216,7 @@ read.parquet(file)
       an error _Unable to infer schema for Parquet_ (2.3.1).
 
 
-# General operations
+# Working with data
 
 ## Accessing columns
 
@@ -228,6 +228,76 @@ columns with `.$` way like `.$foo`.
 
 Function `column` is an alternative, it takes column name as a
 character: `column("foo")`.
+
+## Creating new columns
+
+### Constant columns
+
+Constant columns can be added with the `lit` function:
+```{r litExample}
+foo <- data.frame(a=1:2) %>%
+   createDataFrame()
+foo %>%
+   withColumn("b", lit(77)) %>%
+   collect()
+```
+will add a constant column _b = 77_ to the dataframe, `withColumn`
+will most likely figure out the correct type.
+
+You can add missing values in the same fashion.  However, if you just
+do `withColumn("c", lit(NA))`, you get a column of type _null_ which
+may cause trouble downstream (cannot save it in a parquet file, for
+instance).   You should _cast_ it into the correct type, for instance
+to "integer":
+```{r litNAExample}
+foo %>%
+   withColumn("b", cast(lit(NA), "integer")) %T>%
+   printSchema() %>%
+   collect()
+```
+Indeed, as the schema indicates, _b_ is now an integer.
+
+
+## Renaming columns
+
+There are two built-in functions for renaming.  `rename` expects a
+list of arguments in the form of `newName = existingColumn` (after the
+data frame argument).  Note: this is quoted or unquoted name = column,
+the right hand side must not be just
+a column name.  This is
+perhaps the easiest way to rename variables:
+```{r}
+data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
+data %>%
+   rename(id = column("a"), "name" = column("b")) %>%
+   collect()
+```
+
+`withColumnRenamed` expects two arguments (after the data frame
+argument): old column name and new column name.  Note: these are
+column names, not columns, and the order is the other way around:
+```{r, cache=FALSE}
+data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
+data %>%
+   withColumnRenamed("a", "id") %>%
+   withColumnRenamed("b", "name") %>%
+   collect()
+```
+
+However, certain short column names do not work (2.2.1) and exit with
+an uninformative error message:
+```{r}
+data %>%
+   rename("x" = column("a")) %>%
+   collect()
+```
+
+Name "xx" works, however:
+```{r}
+data %>%
+   rename("xx" = column("a")) %>%
+   collect()
+```
 
 
 # Merging 
@@ -440,48 +510,6 @@ This is simple, and seems to work, at least locally.  Unfortunately there is no
 guarantee that `groupBy` preserves the order (see
 [SPARK-16207](https://issues.apache.org/jira/browse/SPARK-16207)).
 
-
-
-# How to Rename Columns
-
-There are two built-in functions for renaming.  `rename` expects a
-list of arguments in the form of `newName = existingColumn` (after the
-data frame argument).  Note: this is quoted or unquoted name = column,
-the right hand side must not be just
-a column name.  This is
-perhaps the easiest way to rename variables:
-```{r}
-data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
-data %>%
-   rename(id = column("a"), "name" = column("b")) %>%
-   collect()
-```
-
-`withColumnRenamed` expects two arguments (after the data frame
-argument): old column name and new column name.  Note: these are
-column names, not columns, and the order is the other way around:
-```{r, cache=FALSE}
-data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
-data %>%
-   withColumnRenamed("a", "id") %>%
-   withColumnRenamed("b", "name") %>%
-   collect()
-```
-
-However, certain short column names do not work (2.2.1) and exit with
-an uninformative error message:
-```{r}
-data %>%
-   rename("x" = column("a")) %>%
-   collect()
-```
-
-Name "xx" works, however:
-```{r}
-data %>%
-   rename("xx" = column("a")) %>%
-   collect()
-```
 
 
 # arrange
