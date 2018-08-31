@@ -40,6 +40,14 @@ Unfortunately it's documentation is rather sparse.  Here I have
 collected a number of solutions and explanations I have been
 struggling myself and hope others may find useful.
 
+## Preliminaries
+
+In this text I assume you are familiar with magrittr pipes `%>%` and
+`%T>%`.  These two piping constructs are an excellent complement to
+SparkR (and to dplyr package and many other R tasks).  A good source to
+read about pipes is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/) section
+[Pipes](http://r4ds.had.co.nz/pipes.html). 
+
 
 # General concepts
 
@@ -49,7 +57,7 @@ The central data structure in spark is _Resilient Distributed Dataset_
 (RDD).  Resilient means it can be recovered using an earlier stage and
 the _RDD lineage_ information.  
 
-So RDD is not just dataset: a number in RDD is not just a number, but
+So RDD is not just a dataset: a number in RDD is not just a number, but
 a number plus information where this number comes from.
 
 
@@ -155,6 +163,28 @@ other (2.1.2).
 
 
 # Data Input
+
+## From R to spark and back
+
+An R dataframe can be transformed to a spark dataframe using
+`createDataFrame` function, the reverse is done by `collect`.  For
+instance: 
+```{r createDataFrame}
+dfa <- data.frame(a=1:2) %>%
+   createDataFrame()
+dfa
+dfa %>% collect()
+```
+
+However, note you cannot transform 0-row R dataframes into spark in
+this way
+```{r createEmptyDataframe, eval=FALSE}
+dfa <- data.frame(a=integer()) %>%
+   createDataFrame()
+```
+will give an unhelpful error regarding to subscript out of bounds.
+
+
 
 ## How to read csv files
 
@@ -703,11 +733,6 @@ serialize factors.  Use stringsAsFactors=FALSE
 
 you cannot easily overwrite parquet file with new data.  The old cache
 remains in memory and it causes errors.
-
-
-## creating empty spark dataframe
-
-empty R data.frame %>% createDataFrame gives out-of-bounds errors
 
 
 ## Reading Data
