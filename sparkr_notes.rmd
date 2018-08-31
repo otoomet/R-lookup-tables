@@ -296,7 +296,7 @@ merge knows that the keys are just constants:
 ```{r mergeTrivial, eval=FALSE}
 merge(foo, baz, all.x=TRUE) %>% collect()
 ```
-fails with _Join condition is missing or trivial_ error.  Remember:
+fails with _Join condition is missing or trivial_ error (2.3.1).  Remember:
 dataframe is not just data but also the lineage information!
 
 
