@@ -65,10 +65,11 @@ seeing and debugging the RDD lineages is the web monitoring port
 
 A way to _break the lineage_ is to use _checkpointing_.  Checkpointing
 saves the current dataframe as "just data", without any historical
-information.  All the following execution plans take the resulting
+information.  If should be saved on a fault-tolerant file system, such
+as HDFS, to ensure the whole process is fault-tolerant.  All the
+following execution plans now take the resulting
 dataframe as a blank sheet (well, blank in terms of lineage, not data
 content!). 
-
 Checkpointing can be done like this:
 ```{r, eval=FALSE}
 setCheckpointDir("/tmp")
@@ -77,6 +78,11 @@ df2 <- checkpoint(df1)
 ```
 Now `df2` is a lineage-less dataframe.
 
+However, checkpointing is not without it's downsides.  It saves data
+on the disk, and this may be quite slow.  Second, it may take quite a
+bit storage as you are essentially writing all your data on disk in
+uncompressed format.  (Have to check if `unpersist` helps to delete
+checkpoints). 
 
 
 # Configuration
