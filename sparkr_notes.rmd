@@ -246,7 +246,7 @@ read.parquet(file)
       an error _Unable to infer schema for Parquet_ (2.3.1).
 
 
-# Working with data
+# Working with data: the _map_ part
 
 ## Accessing columns
 
@@ -377,6 +377,30 @@ df %>%
    collect()
 ```
 
+
+# Working with data: the _reduce_ part
+
+## aggregating with `agg`
+
+`agg` is the general aggregation function.  It takes the data frame
+and aggregation arguments.  For instance, let's count the number of
+non-missing entries in a data frame:
+```{r aggEx1}
+df <- data.frame(a=c(4, 1,NA)) %>%
+   createDataFrame()
+collect(df)
+df %>%
+   withColumn("b", cast(isNotNull(column("a")), "integer")) %>%
+   agg(n = sum(column("b"))) %>%
+   collect()
+```
+This will result in a dataframe that contain one column, _n_, value of
+which is the desired value.  Here aggregation is determined by the
+`sum` function, an `agg`-s helper function, that takes a numeric
+column (this is why we have to cast the logical column to an integer).
+
+Agg is very much similar to dplyr's `summarize` function: it
+aggregates data, but one must supply the aggregation rule.
 
 
 
