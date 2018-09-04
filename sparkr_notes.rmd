@@ -329,6 +329,26 @@ data %>%
    collect()
 ```
 
+## Converting columns
+
+### Numbers to strings
+
+A tailor-made way to make strings out of numbers is `format_string(format, column)`.  It appears
+to use standard C formatting specifications:
+```{r formatString}
+data %>%
+   withColumn("c", format_string("%10d", column("a"))) %>%
+   collect()
+```
+Note the space before the numbers in string format.
+
+When feeding a string column for `%d` format, spark fails with
+`IllegalFormatConversionException`: 
+`d != org.apache.spark.unsafe.types.UTF8String`.
+
+
+
+
 ## Working with strings
 
 ### substrings with `substr`
