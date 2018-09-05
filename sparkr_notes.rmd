@@ -162,7 +162,7 @@ full, spark fails even if there is still plenty of space on the
 other (2.1.2).
 
 
-# Data Input
+# Data input
 
 ## From R to spark and back
 
@@ -244,6 +244,28 @@ read.parquet(file)
       directory, you have to specify `file` as `path/to/directory/*`.
       If you leave out the trailing wildcard `*`, you get
       an error _Unable to infer schema for Parquet_ (2.3.1).
+
+
+# Data selection and subsetting
+
+## Selecting variables
+
+Spark supports several ways to select (and order) columns from a
+dataframe.  The main methods are `select` function and R-style `[]`
+indexing: 
+```{r select}
+dfa <- data.frame(family=c("Hu", "Xi"),
+                  name=c("Jintao", "Jinping"),
+                  yob=c(1942, 1953)) %>%
+   createDataFrame()
+dfa[,c("yob", "family")] %>%
+   collect()
+dfa %>% select("yob", "family") %>%
+   collect()
+```
+`select` is rather permissive in it's arguments, in addition to the
+above, one can also use `select(c("yob", "family"))` and
+`select(list("yob", "family"))`.
 
 
 # Working with data: the _map_ part
@@ -425,6 +447,25 @@ aggregates data, but one must supply the aggregation rule.
 
 
 # Merging 
+
+## `rbind`: concatenating by rows
+
+Adding nother dataframe underneath a spark dataframe is done with
+`rbind`, exactly as in case of base R:
+```{r rbind}
+names1 <- data.frame(name="sune", age=17) %>%
+   createDataFrame()
+names2 <- data.frame(name="jestin", age=33) %>%
+   createDataFrame()
+rbind(names1, names2) %>%
+   collect()
+```
+
+Both data frames must have the same columns in exactly the same
+order.  If the order does not match, you get an error `Names of input
+data frames are different`, even if the names are the same and the
+problem lies just in the order.
+
 
 ## Merging and joining
 
