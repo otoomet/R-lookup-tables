@@ -253,7 +253,7 @@ read.parquet(file)
 Spark supports several ways to select (and order) columns from a
 dataframe.  The main methods are `select` function and R-style `[]`
 indexing: 
-```{r select}
+```{r select, cache=FALSE}
 dfa <- data.frame(family=c("Hu", "Xi"),
                   name=c("Jintao", "Jinping"),
                   yob=c(1942, 1953)) %>%
@@ -281,7 +281,41 @@ columns with `.$` way like `.$foo`.
 Function `column` is an alternative, it takes column name as a
 character: `column("foo")`.
 
-## Creating new columns
+## Creating new columns: column expressions
+
+There are two functions for computing on columns: `withColumn` and
+`mutate`.  The arguments of the former are:
+```{r eval=FALSE}
+withColumn(dataframe, columnName, expression)
+```
+where `columnName` is a character column name (not a `Column` object),
+and expression is a column expression: something you can create from
+existing columns and constants.  It may include mathematical and
+string operations and other similar functions.  Take the example dataframe
+```{r withColumn}
+dfa %>%
+   collect()
+dfa %>%
+   withColumn("age2018", lit(2018) - column("yob")) %>%
+   collect()
+```
+The column expression, `lit(2018) - column("yob")`, computes the age
+in 2018.  As `column("yob")` is not a number (but a "Column" object),
+one cannot simply do `2018 - column("yob")`.  Arithmetic with numbers
+and columns is limited (there is no "-" function with signature
+"numeric", "Column").  `lit(2018)` creates a new constant column,
+and now we perform arithmetic of two columns instead of a numeric and
+a column.  However, arithmetic
+operators for columns can handle
+"numeric" further down in the signature:
+```{r signature}
+dfa %>%
+   withColumn("age2018", (column("yob") - 2018)*(-1)) %>%
+   collect()
+```
+Now R selects "-" with signature "Column" and "numeric", and this
+works well.
+
 
 ### Constant columns
 
