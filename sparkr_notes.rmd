@@ -654,12 +654,12 @@ SQL parlance are blocks of rows where one can do certain operations.
 Windows can be defined in a different ways, here we are interested
 partitioning data by keys into windows.  This can be done as
 `windowPartitionBy("month")`.  This tells spark that data must be
-"partitioned" by month (I guess the 'partition' here not the same as
+"partitioned" by month (I guess the 'partition' here is not the same as
 RDD partition), and we can operate separately on these partitions.
 
 Now we want to order the partitions by temperature.  This can be
 achieved by `ws <- orderBy(windowPartitionBy("month"), "temp")`.  Note we
-first define window partition, and thereafter it's ordering.  These
+first define the window partition, and thereafter it's ordering.  These
 operations form our _window specification_ `ws`.  This is just
 specification, we haven't touched the data yet.
 
