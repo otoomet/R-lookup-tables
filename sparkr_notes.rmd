@@ -283,15 +283,20 @@ character: `column("foo")`.
 
 ## Creating new columns: column expressions
 
-There are two functions for computing on columns: `withColumn` and
-`mutate`.  The arguments of the former are:
+There are three functions for computing on columns: `withColumn`,
+`mutate` and `transform`.  All of these can either create new, or
+overwrite existing columns.
+
+The arguments for `withColumn` are:
 ```{r eval=FALSE}
 withColumn(dataframe, columnName, expression)
 ```
 where `columnName` is a character column name (not a `Column` object),
 and expression is a column expression: something you can create from
-existing columns and constants.  It may include mathematical and
-string operations and other similar functions.  Take the example dataframe
+existing columns and constants using functions and arithmetic
+operators.  
+It may include mathematical and
+string operations and other column-oriented functions.  Take the example dataframe
 ```{r withColumn}
 dfa %>%
    collect()
@@ -315,6 +320,22 @@ dfa %>%
 ```
 Now R selects "-" with signature "Column" and "numeric", and this
 works well.
+
+`mutate` offers largely overlapping functionality, but it can take
+more than one computation at a time, and it's expressions are in the
+form `name = expression`.  We can achieve the above, and more, in the
+following example:
+```{r mutate}
+dfa %>%
+   mutate(age2018 = lit(2018) - column("yob"),
+          age2000 = lit(2000) - column("yob")
+         ) %>%
+   collect()
+```
+Note that `name` must be unquoted.  We need two `withColumn` commands to
+achieve equivalent results.
+
+Finally, `transform` seems to be pretty much an alias for `mutate`.
 
 
 ### Constant columns
