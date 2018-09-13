@@ -855,6 +855,28 @@ an error.
 
 ## Date-specific functions
 
+### Converting data
+
+#### Date as _utc\_timestamp_ into a given time zone: `from_utc_timestamp`
+
+`from_utc_timestamp(y, x)`: converts _y_ into timestamp in time zone _x_
+
+* `y`: column.  Columns of type _utc\_timestamp_ are supported.
+* `x`: string, time zone.  A time zone the system understands.
+
+Example:
+```{r from_utc_timestamp}
+dateDF2 %>%
+   withColumn("shanghaitime", from_utc_timestamp(column("date"), "Asia/Shanghai")) %>%
+   collect()
+```
+Indeed, Shanghai time is 8 hours ahead of UTC.
+
+
+### Extracting date/time information
+
+#### Day of week `dayofweek`
+
 `dayofweek(x)`: day of week.  Sunday=1, Saturday=7.  Introduced in spark 2.3.0.
 
 * `x`: column.  Columns of type _utc\_timestamp_ are supported.
@@ -863,6 +885,19 @@ Example:
 ```{r dayofweek}
 dateDF2 %>%
    withColumn("dayOfWeek", dayofweek(column("date"))) %>%
+   collect()
+```
+
+#### Hour `hour`
+
+`hour(x)`: hour, in 24h format.
+
+* `x`: column.  Columns of type _utc\_timestamp_ are supported.
+
+Example:
+```{r hour}
+dateDF2 %>%
+   withColumn("hour", hour(column("date"))) %>%
    collect()
 ```
 
