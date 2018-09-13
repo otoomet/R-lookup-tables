@@ -800,21 +800,20 @@ to_utc_timestamp(column("date"), "AFT")
 **Warning**: if the time zone acronym is unknown, it will be silently ignored. 
 
 An example script that performs all these tasks:
-```{r dateConvertExample1
-}
-data <- createDataFrame(data.frame(date=c("3/22 2014 18:44:33", "5/3 2018 11:04:11")))
-data2 <- data %>%
+```{r dateConvertExample1, cache=FALSE}
+dateDF <- createDataFrame(data.frame(date=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")))
+dateDF2 <- dateDF %>%
    withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss")) %>%
    withColumn("date", cast(column("date"), "timestamp")) %>%
    withColumn("date", to_utc_timestamp(column("date"), "Asia/Kabul"))
-data2 %>%
+dateDF2 %>%
    collect()
 ```
 Indeed, UTC time is less than Kabul time by 4 hours 30 mins.
 
 The above can also be achieved in a more compact manner as:
 ```{r dateConvertExample2, dependson="dateConvertExample1"}
-data %>%
+dateDF %>%
    withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss") %>%
                       cast("timestamp") %>%
                       to_utc_timestamp("Asia/Kabul")
@@ -831,7 +830,7 @@ can use `date_format(column, format string)` (note: we need
 [java format symbols](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html) again).
 For instance:
 ```{r dateFormatExample1, dependson="dateConvertExample1"}
-data2 %>%
+dateDF2 %>%
    withColumn("date2", date_format(column("date"), "yyyyMMdd")) %>%
    collect()
 ```
@@ -840,7 +839,7 @@ Alternatively, one can achieve a similar result with extractor
 functions `year`, `month`, `dayofmonth`, `hour`, `minute`, `second`.  For
 instance: 
 ```{r dateFormatExample2, dependson="dateConvertExample1"}
-data2 %>%
+dateDF2 %>%
    withColumn("date2", year(column("date"))*10000 +
                        month(column("date"))*100 +
                        dayofmonth(column("date"))) %>%
@@ -854,6 +853,18 @@ an error.
 (spark 2.2.0)
 
 
+## Date-specific functions
+
+`dayofweek(x)`: day of week.  Sunday=1, Saturday=7.  Introduced in spark 2.3.0.
+
+* `x`: column.  Columns of type _utc\_timestamp_ are supported.
+
+Example:
+```{r dayofweek}
+dateDF2 %>%
+   withColumn("dayOfWeek", dayofweek(column("date"))) %>%
+   collect()
+```
 
 
 # other notes (draft)
