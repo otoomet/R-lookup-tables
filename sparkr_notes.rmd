@@ -44,9 +44,44 @@ struggling myself and hope others may find useful.
 
 In this text I assume you are familiar with magrittr pipes `%>%` and
 `%T>%`.  These two piping constructs are an excellent complement to
-SparkR (and to dplyr package and many other R tasks).  A good source to
+SparkR (and to _dplyr_ package and many other R tasks).  A good source to
 read about pipes is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/) section
 [Pipes](http://r4ds.had.co.nz/pipes.html). 
+
+## SparkR and _dplyr_
+
+SparkR takes a similar approach as _dplyr_ in transforming data, so I
+strongly recommend you to familiarize yourself with _dplyr_ before you
+start with spark.  An excellent source for this
+is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/), section
+[Data Transformations](http://r4ds.had.co.nz/transform.html).  The
+similarity if further stressed by a number of functions ("verbs" in
+Grolemund and Wickham's parlance) having exactly the same name and
+similar syntax.  True, in case of SparkR, there are often two
+versions, one with _dplyr_-similar syntax, and one with it's own
+distinct syntax.
+
+The fact that the syntax is the same can cause issues, however.  For
+instance, selection of certain variables can be done with `select`:
+```{r selectSparkDplyr, eval=FALSE}
+select(data.frame, col, ...) # dplyr
+select(SparkDataFrame, col, ...) # SparkR
+```
+There are two potential issues here:
+
+1. The syntax is not exactly the same: where _dplyr_ expects a list of
+unquoted variable names, _SparkR_ expects a list of _quoted_ names
+(there are other options too, see
+[Selecting variables](#selecting-variables)).
+2. Apparently, the generic `select`, initiated by _dplyr_, is unable
+to invoke the `SparkDataFrame` method.  Instead you see an obscure
+error like _Error in UseMethod("select_") : no applicable method for
+'select_' applied to an object of class "SparkDataFrame"_.  If you
+want to use both _dplyr_ and _SparkR_, load _dplyr_ before you load
+_SparkR_. 
+
+Besides select, the common functions include `mutate` and `rename`.
+
 
 
 # General concepts
@@ -248,7 +283,7 @@ read.parquet(file)
 
 # Data selection and subsetting
 
-## Selecting variables
+## Selecting variables {#selecting-variables}
 
 Spark supports several ways to select (and order) columns from a
 dataframe.  The main methods are `select` function and R-style `[]`
