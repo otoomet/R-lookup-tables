@@ -10,7 +10,9 @@ output:
 ---
 
 I had to replace certain sensitive data in photocopied document in
-order to who these to the public.  Here are what I did to achieve good
+order to who these to the public.  There are popular photocopy
+filters, including for gimp, but these are geared to images, not for text.
+Here are what I did to achieve good
 enough result so now I can show the data to different audiences.  It
 is probably easy to show that part of it is cheated but that is
 not the problem here.  The process is mostly the same for Gimp 2.8 and
