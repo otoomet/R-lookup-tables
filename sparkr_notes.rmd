@@ -275,6 +275,11 @@ read.parquet(file)
 
 * `file`: file name, actually the name of the folder where parquet
   holds it's files
+    * `file` accepts certain shell patterns: `*`, `?`, and brace
+      expansion.  However, only a single set of brace expansion is
+      allowed, and only with commas, not `..` ranges (linux, 2.3.1).
+      Brace expansion can be combined with patters, so a name like
+      `/data/{home,work}/file*` is valid.
     * If you want to read all parquet file (or rather folders) in a
       directory, you have to specify `file` as `path/to/directory/*`.
       If you leave out the trailing wildcard `*`, you get
