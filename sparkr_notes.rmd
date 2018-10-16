@@ -492,7 +492,8 @@ df <- data.frame(a=c(4, 1,NA)) %>%
 collect(df)
 df %>%
    withColumn("b", cast(isNotNull(column("a")), "integer")) %>%
-   agg(n = sum(column("b"))) %>%
+   agg(n = sum(column("b")),
+       mean = avg(column("a"))) %>%
    collect()
 ```
 This will result in a dataframe that contain one column, _n_, value of
@@ -503,6 +504,11 @@ column (this is why we have to cast the logical column to an integer).
 Agg is very much similar to dplyr's `summarize` function: it
 aggregates data, but one must supply the aggregation rule.
 
+There is a long list of `agg`-s aggregation functions (`x` is a column):
+
+* `avg(x)`: average value.  Missings are ignored.
+* `count(x)`: count number of objects (alias `n`)
+* `n(x)`: count number of objects (alias `count`)
 
 
 # Merging 
