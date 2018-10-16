@@ -466,54 +466,6 @@ When feeding a string column for `%d` format, spark fails with
 
 
 
-## Working with strings
-
-### substrings with `substr`
-
-Substrings can be created with `substr`.  It's syntax is simple:
-```{r substr, eval=FALSE}
-substr(x, start, end)
-```
-
-* `x` is a column
-* `start`, `end` are the (1-based) start and end positions in the
-  string.  `start` and `end` must be specified, you cannot leave one
-  out to take everything.  `Inf` is not allowed either.
-  
-Example:
-```{r substrExample}
-df <- data.frame(names=c("Barnier", "Beto")) %>%
-   createDataFrame()
-df %>% withColumn("x", substr(column("names"), 3, 20)) %>%
-   collect()
-```
-This extracts characters 3 to 30 (i.e. from 3 till end) from these
-names.  
-  
-**Warning**: in SparkR < 2.3.0, start position was to be
-given _one past_ the first character to be extracted.  So in the
-example above, one has to use `substr(column("names"), 4, 20)`
-
-
-### startsWith, endsWith
-
-These are utility functions that test if a string column starts or
-ends with a given substring.  These return a logical column.
-
-```{r startsWith, eval=FALSE}
-startsWith(column, substring)
-endsWith(column, substring)
-```
-
-Example:
-```{r endsWithExample}
-df <- data.frame(x=c("foo", "bar")) %>%
-   createDataFrame()
-df %>%
-   withColumn("y", endsWith(column("x"), "oo")) %>%
-   collect()
-```
-
 
 # Working with data: the _reduce_ part
 
@@ -806,6 +758,92 @@ not work
 (2.2.1)
 
 
+
+# Working with strings
+
+The following examples use a tiny dataframe of names:
+```{r namesData, cache=FALSE}
+names <- data.frame(name=c("Barnier", "Beto")) %>%
+   createDataFrame()
+```
+
+## substrings with `substr`
+
+Substrings can be created with `substr`.  It's syntax is simple:
+```{r substr, eval=FALSE}
+substr(x, start, end)
+```
+
+* `x` is a column
+* `start`, `end` are the (1-based) start and end positions in the
+  string.  `start` and `end` must be specified, you cannot leave one
+  out to take everything.  `Inf` is not allowed either.
+  
+Example:
+```{r substrExample}
+names %>%
+   withColumn("x", substr(column("name"), 3, 30)) %>%
+   collect()
+```
+This extracts characters 3 to 30 (i.e. from 3 till end) from these
+names.  
+  
+**Warning**: in SparkR < 2.3.0, start position was to be
+given _one past_ the first character to be extracted.  So in the
+example above, one has to use `substr(column("names"), 4, 20)`
+
+
+## startsWith, endsWith
+
+These are utility functions that test if a string column starts or
+ends with a given substring.  These return a logical column.
+
+```{r startsWith, eval=FALSE}
+startsWith(column, substring)
+endsWith(column, substring)
+```
+
+Example:
+```{r endsWithExample}
+names %>%
+   withColumn("x", endsWith(column("name"), "to")) %>%
+   collect()
+```
+
+## Pattern in strings: `contain`
+
+`contain(column, pattern)` tests simple (non-regexp) patterns in
+string columns:
+```{r containExample}
+names %>%
+   withColumn("x", contains(column("name"), "ar")) %>%
+   collect()
+```
+Regexp patterns are treated literally (?) and do not work (2.3.1). 
+
+
+## Regexp replacement: `regexp_replace`
+
+Syntax: `regexp_replace(column, pattern, replacement)`.  Pattern is a
+regexp. 
+
+Note: regexp is in
+[_java regexp syntax_](https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html). 
+```{r regexp_replaceExample}
+names %>%
+   withColumn("x", regexp_replace(column("name"), "r(.*)", "R")) %>%
+   collect()
+```
+
+In particular, java denotes replacement groups by $1, $2 and so on:
+```{r regexp_replaceGrouping}
+names %>%
+   withColumn("x", regexp_replace(column("name"), "r(.*)", "R$1")) %>%
+   collect()
+```
+
+
+
 # Handling Dates
 
 ## Timestamps
@@ -813,28 +851,22 @@ not work
 It is not immediately obvious how to handle dates inside spark.  In
 CSV files the
 date data is usually in some sort of _yyyy-mm-dd_ form which will be
-read as character string.  The spark internal format of choice would
-be _utc\_timestamp_, the timestamp in UTC time zone.  The way there
-may be slightly circuituous:
+read as character string.  It is often useful to keep data
+consistently in UTC time as _utc\_timestamp_.  The way there includes
+two steps:
 
 1. Convert the character representation (say, column "date") into
-_unix\_timestamp_ with
+_timestamp_ with
 ```r
-unix_timestamp(column("date"), "MM/dd/yyyy hh:mm:ss")
+to_timestamp(column("date"), "MM/dd/yyyy hh:mm:ss")
 ```
 Note: spark expects [java date formatting](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html), not `strptime` date
 formatting. 
 
-2. As _to\_utc\_timestamp_ we will use below expects _timestamp_ class, not
-_unix\_timestamp_, one has to cast it into _timestamp_:
-```r
-cast(column("date"), "timestamp")
-```
-
-3. Finally, we can convert the column into _utc\_timestamp_ using the
+2. Convert _timestamp_ into _utc\_timestamp_ using the
 correct timezone for the original data:
 ```r
-to_utc_timestamp(column("date"), "AFT")
+to_utc_timestamp(column("date"), "Asia/Kabul")
                            # use AFT time zone
 ```
 **Warning**: if the time zone acronym is unknown, it will be silently ignored. 
@@ -843,8 +875,7 @@ An example script that performs all these tasks:
 ```{r dateConvertExample1, cache=FALSE}
 dateDF <- createDataFrame(data.frame(date=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")))
 dateDF2 <- dateDF %>%
-   withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss")) %>%
-   withColumn("date", cast(column("date"), "timestamp")) %>%
+   withColumn("date", to_timestamp(column("date"), "MM/dd yyyy HH:mm:ss")) %>%
    withColumn("date", to_utc_timestamp(column("date"), "Asia/Kabul"))
 dateDF2 %>%
    collect()
@@ -854,8 +885,7 @@ Indeed, UTC time is less than Kabul time by 4 hours 30 mins.
 The above can also be achieved in a more compact manner as:
 ```{r dateConvertExample2, dependson="dateConvertExample1"}
 dateDF %>%
-   withColumn("date", unix_timestamp(column("date"), "MM/dd yyyy HH:mm:ss") %>%
-                      cast("timestamp") %>%
+   withColumn("date", to_timestamp(column("date"), "MM/dd yyyy HH:mm:ss") %>%
                       to_utc_timestamp("Asia/Kabul")
               ) %>%
    collect()
