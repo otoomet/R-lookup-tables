@@ -824,18 +824,16 @@ Regexp patterns are treated literally (?) and do not work (2.3.1).
 
 ## Regexp replacement: `regexp_replace`
 
-Syntax: `regexp_replace(column, pattern, replacement)`.  Pattern is a
-regexp. 
-
-Note: regexp is in
-[_java regexp syntax_](https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html). 
+Syntax: `regexp_replace(x, pattern, replacement)` where `x` is to
+column to operate on.  Pattern is a
+regexp, and replacement can contain [java regexp groups](https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html) $1, $2 etc.
 ```{r regexp_replaceExample}
 names %>%
    withColumn("x", regexp_replace(column("name"), "r(.*)", "R")) %>%
    collect()
 ```
 
-In particular, java denotes replacement groups by $1, $2 and so on:
+Here is another example using java replacement group $1:
 ```{r regexp_replaceGrouping}
 names %>%
    withColumn("x", regexp_replace(column("name"), "r(.*)", "R$1")) %>%
