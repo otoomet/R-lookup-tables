@@ -448,6 +448,18 @@ data %>%
 
 ## Converting columns
 
+### Casting with `cast`
+
+`cast(x, dataType)` is the general way of converting column `x` to a
+new data type.  `dataType` must be one of the
+[spark datatypes](https://spark.apache.org/docs/latest/sparkr.html#data-type-mapping-between-r-and-spark),
+not R data type.  In particular
+
+| R data type | spark data type|
+|-------------| ---------------|
+|     numeric | double         |
+
+
 ### Numbers to strings
 
 A tailor-made way to make strings out of numbers is `format_string(format, column)`.  It appears
