@@ -308,6 +308,33 @@ above, one can also use `select(c("yob", "family"))` and
 `select(list("yob", "family"))`.
 
 
+## Filtering observations
+
+The way to filter observations is `filter`.  It expects a column
+expression.
+
+Example:
+```{r filter}
+dfa %>% filter(column("yob") > 1950) %>%
+   collect()
+```
+Filter will not work with multiple condidions, you have to use logical
+operators. 
+
+Filter wants your values to be of a single class, including a single
+value for S3 classes.  This sometimes creates warnings, e.g. with
+dates that have class of `c("POSIXct", "POSIXt")`:
+```{r multiClassWarningExample}
+df <- data.frame(date = ISOdatetime(2018,10,17,14,34,12)) %>%
+   createDataFrame()
+df %>% filter(column("date") == ISOdatetime(2018,10,17,14,34,12)) %>%
+   collect()
+```
+It still works, but the warning is unpleasant.
+
+Note that you cannot use `suppressWarnings` with piping.
+
+
 # Working with data: the _map_ part
 
 ## Accessing columns
@@ -321,7 +348,7 @@ columns with `.$` way like `.$foo`.
 Function `column` is an alternative, it takes column name as a
 character: `column("foo")`.
 
-## Creating new columns: column expressions
+## Creating new columns: column expressions, `withColumn` and `mutate`
 
 There are three functions for computing on columns: `withColumn`,
 `mutate` and `transform`.  All of these can either create new, or
@@ -374,6 +401,9 @@ dfa %>%
 ```
 Note that `name` must be unquoted.  We need two `withColumn` commands to
 achieve equivalent results.
+
+Mutate has some quirks with short variable names, such as `x`
+sometimes not working and leading to obscure errors.
 
 Finally, `transform` seems to be pretty much an alias for `mutate`.
 
@@ -840,6 +870,21 @@ names %>%
 Regexp patterns are treated literally (?) and do not work (2.3.1). 
 
 
+## Where is pattern in string: `instr`
+
+`instr(y, x)` finds the location of the first occurrence of substring
+(not regexp) `x` in column
+`y`.  Positions inside of string are counted from 1, returns 0 if the
+substring not found:
+```{r instrExample}
+names %>%
+   mutate(xs = instr(column("name"), "ar"),
+          xr = instr(column("name"), "a.")) %>%
+   collect()
+```
+Regexp patterns are treated literally (?) and do not work (2.3.1). 
+
+
 ## Regexp replacement: `regexp_replace`
 
 Syntax: `regexp_replace(x, pattern, replacement)` where `x` is to
@@ -959,6 +1004,22 @@ dateDF2 %>%
 Indeed, Shanghai time is 8 hours ahead of UTC.
 
 
+#### Get date from timestamp: `to_date`
+
+_timestamp_ includes time in seconds, _date_ only concerns dates.  You
+can convert the former to the latter as with `to_date(x, format)`
+where `x` is the column, and `format` is the format string, only
+applicable if `x` is a character column.
+
+Example:
+```{r to_date}
+dateDF2 %>%
+   withColumn("ymd", to_date(column("date"))) %>%
+   collect()
+```
+
+
+
 ### Extracting date/time information
 
 #### Day of week `dayofweek`
@@ -986,6 +1047,7 @@ dateDF2 %>%
    withColumn("hour", hour(column("date"))) %>%
    collect()
 ```
+
 
 
 # other notes (draft)
