@@ -137,13 +137,13 @@ Local installation on linux is very easy and straightforward:
 1.
 [download the latest version](https://spark.apache.org/downloads.html)
 2. decompress it into a suitable location (e.g. `$HOME/local`)
-3. If needed, you can also set 
+3. If you intend to use spark from outside of R, you should also set 
 ```bash
 SPARK_HOME=$HOME/local/spark-x.x.x-bin-hadoop
 ```
-or whatever is your exact installation directory.  However, the
-location of spark home can also be set when initializing spark session
-from within R.
+or whatever is your exact installation directory.  When only relying
+on R, the location of spark home can also be set when initializing
+spark session.
 
 [Windows installation](https://dzone.com/articles/working-on-apache-spark-on-windows)
 is more involved.
@@ -159,8 +159,8 @@ Without any arguments it returns all set options:
 sparkR.conf()
 ```
 Note that there is no obvious entry for parallelism.  When invoked
-locally, it is visible in the for of "master[2]", but no separate
-entry is provided (2.2.1).
+locally, it is visible as the entry of `spark.master`, here
+"local[2]", but no dedicated number is provided (2.3.1).
 
 
 ### Compression Codecs
