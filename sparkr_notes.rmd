@@ -128,9 +128,30 @@ uncompressed format.  (Have to check if `unpersist` helps to delete
 checkpoints). 
 
 
-# Configuration
+# Installing and Invoking Spark
 
-## Getting Run-Time Configuration
+## Installation
+
+Local installation on linux is very easy and straightforward:
+
+1.
+[download the latest version](https://spark.apache.org/downloads.html)
+2. decompress it into a suitable location (e.g. `$HOME/local`)
+3. If needed, you can also set 
+```bash
+SPARK_HOME=$HOME/local/spark-x.x.x-bin-hadoop
+```
+or whatever is your exact installation directory.  However, the
+location of spark home can also be set when initializing spark session
+from within R.
+
+[Windows installation](https://dzone.com/articles/working-on-apache-spark-on-windows)
+is more involved.
+
+
+## Configuration
+
+### Getting Run-Time Configuration
 
 The basic run-time configuration can be returned by `sparkR.conf()`.
 Without any arguments it returns all set options:
@@ -142,7 +163,7 @@ locally, it is visible in the for of "master[2]", but no separate
 entry is provided (2.2.1).
 
 
-## Compression Codecs
+### Compression Codecs
 
 By default, spark compresses parquet files by snappy codec which
 creates rather large temporary files.  You have to configure it explicitly to use something else, such as "gzip".  The codec must
@@ -163,7 +184,7 @@ to `sparkR.conf` do not work.  Neither can you configure spark before
 you have initialized the sparkSession.
 
 
-## Java heap memory
+### Java heap memory
 
 Spark driver memory can be set when creating the spark session with
 the `spark.driver.memory` option.  It takes character values like `"4g"`:
@@ -178,7 +199,7 @@ java heap space.
 
 
 
-## Temporary Directories
+### Temporary Directories
 
 Spark stores quite a bit of temporary data on disk so you should
 ensure you have plenty of disk space.  The location of temporary
@@ -885,7 +906,7 @@ names %>%
 Regexp patterns are treated literally (?) and do not work (2.3.1). 
 
 
-## Concatenating strings: `concat`
+## Concatenating strings: `concat` {#concat}
 
 `concat(x, ...)` concatenates string column `x` with other columns:
 ```{r concat}
@@ -924,61 +945,72 @@ There are two time formats of choice: dates and timestamps.  Dates
 only represent a date (a day) while timestamps record the instance in
 seconds.  You probably want to use the former if the event spans the
 whole day (like birthday) and the latter if the event is about a
-specific point of time, say a phone call.  Both dates and timestamps
-can be converted to each other.  
+specific point of time (say the beginning of a phone call).  Both dates and timestamps
+can be converted to each other.  Both dates and timestamps contain timezone
+information, timestamps are stored in UTC internally but when you
+`collect()` timestamp data, the result will be
+printed in the current (as set in your operating system) timezone by
+R.  The similar conversion occurs with dates, it will be converted to
+the date in your current timezone (as set in your operating system) at
+00:00:00 midnight in the date's timezone ([see below](#date-converting-spark-R)).
 
-Comparing a date and a timestamp assumes the date is a timestamp that
-occurs 00:00:00 am at that date.
+There are three types of timestamps:
+
+* _timestamp_: ordinary timestamp
+* _utc\_timestamp_:
+* _unix\_timestamp_: just a number of seconds since the UNIX epoch
+  (1970-01-01).
+
+When comparing and converting dates and timestamps, spark assumes the
+date is a timestamp that occurs 00:00:00 at the relevant time zone.
 
 
-## Converting character representation into timestamps
+## Converting data in and out of timestamps
 
-It is not immediately obvious how to handle dates inside spark.  In
+We demonstrate the date handling below using this data frame:
+```{r, dateDF, cache=FALSE}
+dateDF <- data.frame(string=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")) %>%
+   createDataFrame()
+collect(dateDF)
+```
+
+### From character representation
+
+In
 CSV files the
-date data is usually in some sort of _yyyy-mm-dd_ form which will be
-read as character string.  It is often useful to keep data
-consistently in UTC time as _utc\_timestamp_.  The way there includes
-two steps:
-
-1. Convert the character representation (say, column "date") into
-_timestamp_ with
-```r
-to_timestamp(column("date"), "MM/dd/yyyy hh:mm:ss")
-```
-Note: spark expects [java date formatting](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html), not `strptime` date
-formatting. 
-
-2. Convert _timestamp_ into _utc\_timestamp_ using the
-correct timezone for the original data:
-```r
-to_utc_timestamp(column("date"), "Asia/Kabul")
-                           # use AFT time zone
-```
-**Warning**: if the time zone acronym is unknown, it will be silently ignored. 
-
-An example script that performs all these tasks:
-```{r dateConvertExample1, cache=FALSE}
-dateDF <- createDataFrame(data.frame(date=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")))
+date data is usually in some form of _yyyy-mm-dd_ form which will be
+read as character string.  This can be converted to timestamps with
+`to_timestamp`.  However, this assumes the time is given in the
+current time zone (as set in your operating system):
+```{r, convertTime, cache=FALSE}
 dateDF2 <- dateDF %>%
-   withColumn("date", to_timestamp(column("date"), "MM/dd yyyy HH:mm:ss")) %>%
-   withColumn("date", to_utc_timestamp(column("date"), "Asia/Kabul"))
-dateDF2 %>%
-   collect()
+   withColumn("date", to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss"))
+collect(dateDF2)
 ```
-Indeed, UTC time is less than Kabul time by 4 hours 30 mins.
+As you can see, the result, printed in your current time zone,
+correspond exactly to the string representation.  `to_timestamp`
+assumes the time is in your current time zone.
 
-The above can also be achieved in a more compact manner as:
-```{r dateConvertExample2, dependson="dateConvertExample1"}
+If the original time is not given in your current time zone, you can
+add the time zone descriptor by [`concat`](#concat) to the string.
+For instance, if the original time was given in Kabul time (UTC+4:30),
+you can add the tz descriptor "+04:30" (note the leading "0") while
+also adding TZ format symbol "XXX" (see more in
+[java SimpleDateFormat](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)): 
+```{r, convertTimeTZ}
 dateDF %>%
-   withColumn("date", to_timestamp(column("date"), "MM/dd yyyy HH:mm:ss") %>%
-                      to_utc_timestamp("Asia/Kabul")
-              ) %>%
+   withColumn("date",
+              to_timestamp(concat(column("string"), lit("+04:30")),
+                           "MM/dd yyyy HH:mm:ssXXX")) %>%
    collect()
 ```
+Now the date-column is different from the string representation
+(unless your OS is set to the Afghan tz).
 
-(spark 2.1.2)
 
-## Formatting dates
+
+
+### Formatting dates back to characters
 
 When we want to convert a _utc\_timestamp_ back to string representation in UTC, we
 can use `date_format(column, format string)` (note: we need 
@@ -1006,6 +1038,42 @@ as `10000*year(column("date"))` gives
 an error.
 
 (spark 2.2.0)
+
+
+### Converting between R and spark {#date-converting-spark-R}
+
+These rules apply when converting R dataframes into spark with
+`createDataFrame`.
+
+R _Date_-s will be converted to _date_ type.  This only applies to the
+objects of true _Date_ class, not to the dates with timezones in
+lubridate which are actually _POSIXct_ objects (except if the timezone
+is "UTC" or similar).
+
+R timestamps, i.e. _POSIXct_ objects will be converted to
+_timestamps_.  This also applies to dates with timezones as long as
+these are internally _POSIXct_ objects.
+```{r, dateTZExample}
+df <- data.frame(date=as.Date("2018-10-19"), dateTZ=lubridate::ymd("2018-10-19", tz="Asia/Kabul"))
+sapply(df, class)
+```
+The first column, _date_ is of class _Date_, the second is _POSIXct_.  
+```{r, dateTZSpark}
+df %>% createDataFrame() %>%
+   printSchema()
+```
+As you can see, _date_ is of class _date_, while _dateTZ_ is
+_timestamp_.  Dates with time zone set are not true dates in R.
+
+When converting the spark time objects back to R with `collect()`, one get's _POSIXct_
+objects from timestamps and _Date_-s from dates.  Both are normally
+printed for the current time zone (as set in your operating system).  
+
+Dates with timezones in spark are converted to _Date_ assuming the
+represent the instant 00:00:00 at the corresponding day and time zone
+(i.e. the TZ for this particular date),
+and the day of that instant in the _current timezone_ is converted to R
+_Date_ object.  So the result depends on your timezone settings!
 
 
 ## Date-specific functions
@@ -1037,12 +1105,24 @@ applicable if `x` is a character column.  By default it uses ISO dates
 with `format = "yyyy-MM-dd"`. 
 
 Example:
-```{r to_date}
+```{r to_dateExample}
 dateDF2 %>%
    withColumn("ymd", to_date(column("date"))) %>%
    collect()
 ```
 
+#### _timestamp_ from character: `to_timestamp()`
+
+`to_timestamp(x, format)` converts column `x` to timestamp using
+[java SimpleDateFormat](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)
+specifications. 
+
+An example script that performs all these tasks:
+```{r to_timestampExample, cache=FALSE}
+dateDF %>%
+   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   collect()
+```
 
 
 ### Extracting date/time information
