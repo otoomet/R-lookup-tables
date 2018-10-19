@@ -885,6 +885,17 @@ names %>%
 Regexp patterns are treated literally (?) and do not work (2.3.1). 
 
 
+## Concatenating strings: `concat`
+
+`concat(x, ...)` concatenates string column `x` with other columns:
+```{r concat}
+names %>%
+   mutate(mName = concat(lit("M. "), column("name"))) %>%
+   collect()
+```
+No space is inserted between the two concatenated columns.
+
+
 ## Regexp replacement: `regexp_replace`
 
 Syntax: `regexp_replace(x, pattern, replacement)` where `x` is to
@@ -907,7 +918,20 @@ names %>%
 
 # Handling Dates
 
-## Timestamps
+## Dates and Timestamps
+
+There are two time formats of choice: dates and timestamps.  Dates
+only represent a date (a day) while timestamps record the instance in
+seconds.  You probably want to use the former if the event spans the
+whole day (like birthday) and the latter if the event is about a
+specific point of time, say a phone call.  Both dates and timestamps
+can be converted to each other.  
+
+Comparing a date and a timestamp assumes the date is a timestamp that
+occurs 00:00:00 am at that date.
+
+
+## Converting character representation into timestamps
 
 It is not immediately obvious how to handle dates inside spark.  In
 CSV files the
@@ -1004,12 +1028,13 @@ dateDF2 %>%
 Indeed, Shanghai time is 8 hours ahead of UTC.
 
 
-#### Get date from timestamp: `to_date`
+#### Get date from timestamp or string: `to_date`
 
 _timestamp_ includes time in seconds, _date_ only concerns dates.  You
 can convert the former to the latter as with `to_date(x, format)`
 where `x` is the column, and `format` is the format string, only
-applicable if `x` is a character column.
+applicable if `x` is a character column.  By default it uses ISO dates
+with `format = "yyyy-MM-dd"`. 
 
 Example:
 ```{r to_date}
