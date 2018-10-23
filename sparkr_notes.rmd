@@ -1007,6 +1007,20 @@ dateDF %>%
 Now the date-column is different from the string representation
 (unless your OS is set to the Afghan tz).
 
+The fact that time output is always converted to your local time zone
+may feel confusing and make code incoherent between different time
+zones.  In this case on should choose to keep time in _utc\_timestamp_:
+```{r, keepUTC}
+dateUTC <- dateDF %>%
+   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "Asia/Kabul")) %>%
+   collect()
+dateUTC
+```
+This converts the string date into an UTC timestamp, assuming the
+original data was given in the Afghanistan time.  From the R point of
+view, the _utc\_timestamp_ is just a _POSIXct_ object, exactly as
+_timestamp_ objects with no additional attributes, even not `tzone` set.
 
 
 
@@ -1080,6 +1094,23 @@ _Date_ object.  So the result depends on your timezone settings!
 
 ### Converting data
 
+#### `to_utc_timestamp`
+
+`to_utc_timestamp(y, x)` convert column _y_ into _utc\_timestamp_ in
+time zone `x`.  `x` must be provided as text (like _US/Pacific_),
+numeric form (as _-08:00_) does not work.
+
+```{r, to_utc_timestampExample}
+dateDF2 %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "US/Pacific")) %>%
+   collect()
+```
+Seems like _utc\_timestamp_ is not converted to the local time zone
+when collecting/printing.
+_UTC_ is ahead of _US/Pacific_ by 8 hours in september and 7 hours in
+early March.
+
+
 #### Date as _utc\_timestamp_ into a given time zone: `from_utc_timestamp`
 
 `from_utc_timestamp(y, x)`: converts _y_ into timestamp in time zone _x_
@@ -1142,6 +1173,8 @@ dateDF2 %>%
 
 #### Hour `hour`
 
+Extract hour in the current (as set in os) timezone.
+
 `hour(x)`: hour, in 24h format.
 
 * `x`: column.  Columns of type _utc\_timestamp_ are supported.
@@ -1150,6 +1183,15 @@ Example:
 ```{r hour}
 dateDF2 %>%
    withColumn("hour", hour(column("date"))) %>%
+   collect()
+```
+Note: hour is extracted from the timestamp after converting it into
+the current time zone.  Use date in _utc\_timestamp_ if you want the hour in UTC.
+
+```{r, hour2}
+dateDF2 %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "US/Pacific")) %>%
+   mutate(hour = hour(column("dateUTC"))) %>%
    collect()
 ```
 
