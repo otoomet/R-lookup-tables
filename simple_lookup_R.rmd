@@ -1,0 +1,375 @@
+---
+title: "Simple Int-to-Int Value Lookup R"
+subtitle: "Different Approaches"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    code_folding: hide
+---
+
+# Setup
+
+In [an earlier post](https://otoomet.github.io/table_lookup_in_R.html)
+I compared the time for looking up values in a 2D table, indexed by
+different type of objects.  Now let's take a step backward and analyze
+a simple 1D value lookup.  I am focusing on integer-integer lookup,
+i.e. both keys and values are integers.  The type of values is
+probably of little importance--at least if these are atomic data
+types--as most of the work is presumably done looking up the keys in
+the key tables.  I am also solely interested in elementwise lookups, i.e. I look up single
+integer key instead of vector of keys.
+
+The tests are done on
+`r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'",
+intern=TRUE)` on a single core.
+
+We create pairs of vectors to keep the values, and use the first one
+to look up the value in the second one.
+
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                     message=FALSE,
+                     cache=TRUE,
+                     cache.path=".simple_lookup_cache/",
+                     engine.path = list(python = "/usr/bin/python3")
+                     )
+library(foreach)  # for convenient loops
+library(magrittr) # 'cause I love pipes
+library(microbenchmark) # to avoid delay when using the first time
+library(data.table)
+library(ggplot2)
+```
+
+```{r R}
+L <- 1e5
+                           # number of look-ups
+ns <- c(1e1, 3e1, 1e2, 3e2, 1e3, 3e3, 1e4, 3e4, 1e5, 3e5)
+                           # timing repetitions used later
+```
+
+We look up `r L` values from tables of different sizes:
+```{r}
+ns
+```
+
+We use _microbenchmark_ library and report timing in milliseconds.
+
+
+## Benchmark: no lookup
+
+First we do the exercise with no actual value lookup.  This serves as
+a benchmark: in particular for small lookup tables, the actual lookup
+time may be small compared to other related overheads.  We just loop
+over all keys and pick the value corresponding to that key, using
+positional indexing.
+
+```{r noLookup, dependson="R"}
+doNothing <- function(sKeys, keys, values) {
+   ## find values, corresponding to keys
+   for(key in sKeys) {
+      v <- values[key]
+   }
+}
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
+   keys <- sample(seq(along=values))
+                           # keys are just the integer indices, in random order
+   shuffledKeys <- sample(keys, L, replace=TRUE)
+   microbenchmark(doNothing(shuffledKeys, keys, values),
+                                  times=10L,
+                                  control=list(warmup=10)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n)
+}
+results <- data.frame(n=ns, "no lookup"=time, check.names=FALSE)
+time
+```
+
+We see that the theoretical lower bound is 
+`r formatC(tail(results[["no lookup"]], 1), format="f",
+   digits=0)`ms.  This time does not depend on the the lookup table
+size as the use plain integer indexing.
+
+
+## Built-in `match`
+
+R has built-in `match` function whose task is to do just such lookup.
+We loop over the keys in randomized order and use match to find the
+location of the corresponding key in the table.
+
+```{r match, dependson="R"}
+doMatch <- function(sKeys, keys, values) {
+   ## find values, corresponding to keys
+   for(key in sKeys) {
+      v <- values[match(key, keys)]
+   }
+}
+
+timeMatch <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
+   keys <- sample(values)
+                           # keys are values in random order
+   shuffledKeys <- sample(keys, L, replace=TRUE)
+   microbenchmark::microbenchmark(doMatch(shuffledKeys, keys, values), times=2L,
+                                  control=list(warmup=1)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n)
+}
+timeMatch
+```
+The result--`r formatC(tail(timeMatch, 1)/1000,
+   format="f", digits=0)`s 
+is not impressive but may work for many practical applications for 
+`r tail(ns,1)`-element table.
+
+
+### Named vectors
+
+R has a version of lookup table built-in in the form of named
+vectors.  We test the speed by assigning the keys as names to the
+value vector, and thereafter we convert numeric keys to
+character during the lookup with
+`values[as.character(key)]`.  Note that in many applications one may
+also be able to pre-convert all the keys to characters.
+
+We get the following timings:
+```{r namedVector, dependson="R"}
+doNV1 <- function(sKeys, values) {
+   ## find values, corresponding to keys
+   for(key in sKeys) {
+      v <- values[as.character(key)]
+   }
+}
+
+timeNV <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
+   keys <- sample(values)
+                           # keys are values in random order
+   values <- setNames(values, keys)
+                           # create named vector keys/values
+   shuffledKeys <- sample(keys, L, replace=TRUE)
+   microbenchmark::microbenchmark(doNV1(shuffledKeys, values), times=1L) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n)
+}
+timeNV
+```
+
+As one can clearly see, the approach is slow. 
+`r formatC(tail(timeNV, 1)/1000, format="f",
+digits=0)`s is not a feasible speed
+for a lookup of table of size `r tail(ns,1)`.
+
+
+
+### `fmatch` in "fastmatch"
+
+Unlike built-in `match` with it's sequential lookup,
+`fastmatch::fmatch` builds the lookup hashtable at the first iteration, and later
+uses it.  It results in dramatically better times for long tables.
+
+```{r fmatch, dependson="R"}
+doFMatch <- function(sKeys, keys, values) {
+   ## find values, corresponding to keys
+   for(key in sKeys) {
+      v <- values[fastmatch::fmatch(key, keys)]
+   }
+}
+
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, ns)
+   keys <- sample(values)
+                           # keys are values in random order
+   shuffledKeys <- sample(keys, L, replace=TRUE)
+   microbenchmark::microbenchmark(doFMatch(shuffledKeys, keys, values), times=2L,
+                                  control=list(warmup=1)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n)
+}
+results[["fmatch"]] <- time
+time
+```
+The result--`r formatC(tail(results[["fmatch"]], 1)/1000,
+   format="f", digits=1)`s--seems to be a fair speed, potentially for
+   most applications.
+
+
+### Hashed environment
+
+R environments can be used as built-in hashed lookup tables, as long
+as the keys can be represented as character strings.  This works well
+for integers.  We create a vector of values, assign the keys to it as
+names, convert the named vector to a list, and finally into a hashed
+environment with `list2env(., hash=TRUE)`.  We perform the lookup in
+the environment with
+`values[[as.character(key)]]`. 
+
+
+```{r hEnvInt, dependson="R"}
+doHEnv <- function(sKeys, values) {
+   ## find values, corresponding to keys
+   for(key in sKeys) {
+      v <- values[[as.character(key)]]
+   }
+}
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
+   keys <- sample(values)
+                           # we need character values to access the environment
+   values <- setNames(values, keys) %>%
+                           # make it into a vector...
+      as.list() %>%
+      list2env(hash=TRUE)
+                           # and convert into a hashed environment
+   shuffledKeys <- sample(keys, L, replace=TRUE)
+   microbenchmark::microbenchmark(doHEnv(shuffledKeys, values), times=2L,
+                                  control=list(warmup=1)) %>%
+                           # find keys in random order
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n)
+}
+results[["hashed env"]] <- time
+time
+```
+
+So far, hashed environments appear to be the fastest approach.  At the
+largest table, the time
+`r formatC(tail(results[["hashed env"]], 1)/1000, 
+   format="f", digits=1)`s is about twice as fast as for `fmatch`.
+   
+
+### Data.tables
+
+data.table library offers an alternative to data frame and contains
+built-in ordering by index.  We use the index (as key) lookup of a the value from data.table
+
+```{r data.table, dependson="R"}
+doDT <- function(sKeys, dtable) {
+   ## find values, corresponding to keys
+   for(key in sKeys) {
+      v <- dtable[key, values]
+   }
+}
+time <- foreach(n = ns, .combine=c) %do% {
+   values <- sample(1000000000L, n)
+   keys <- sample(values)
+                           # we need character values to access the environment
+   dtable <- data.table(keys, values, key="keys")
+                           # set hashed index to the table
+   shuffledKeys <- sample(keys, L, replace=TRUE)
+   microbenchmark::microbenchmark(doDT(shuffledKeys, dtable), times=2L,
+                                  control=list(warmup=1)) %>%
+      as.data.frame() %>%
+      extract2("time") %>%  # extract time in nanoseconds
+      mean() %>%
+      divide_by(1e6) %>%
+      set_names(n)
+}
+results[["data.table"]] <- time
+time
+```
+
+Data tables appear to be surprisingly slow despite the 
+indexing being
+[advertised as a "incredibly fast" lookup](https://cran.r-project.org/web/packages/data.table/vignettes/datatable-keys-fast-subset.html).
+I guess this is because
+`[.data.table` has quite a bit of overhead.  If this is the
+case, one may expect to see a substantial speed improvement with 
+vectorized lookups. Even in the current form, data tables may still be 
+substantially faster than the corresponding lookup using data frames, however, 
+such a test is out of scope in this post.
+
+
+### Another benchmark: do the same in python
+
+Finally, let's leave R and use the standard dict in python.
+
+```{python, cache=TRUE}
+import time
+import random
+import pandas as pd
+L = 100000
+ns = [10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000]
+t = []
+for n in ns:
+    values = [i for i in range(n)]
+    keys = values.copy()
+    random.shuffle(keys)
+    table = dict(zip(values, keys))
+    lk = [random.choice(keys) for _ in range(L)]
+    # keys to be looked up
+    t0 = time.time()
+    # start the clock
+    for k in lk:
+        # pick first L keys--just random ones
+        v = table[k]
+    t.append((time.time() - t0)*1000)
+    # in milliseconds
+df = pd.DataFrame({ "n" : ns, "time" : t })
+df.to_csv("python_results.csv", index=False)
+print(df)
+```
+Not surprisingly, python is at least a magnitude faster than R.
+
+
+# Conclusions and the final plot
+
+Finally, here is a plot with all approaches together.
+
+```{r plotAll, echo=FALSE, cache=FALSE, fig.width=12, fig.height=10, comment=NA}
+results[["match"]] <- timeMatch
+results[["named vectors"]] <- timeNV
+pythonResults <- read.csv("python_results.csv") %>%
+   cbind(method = "python dict")
+                           # cannot delete the file: if python chunk is taken from cache, it will not re-create it
+tidyr::gather(results, key=method, value=time, -n) %>%
+   rbind(pythonResults) %>%
+   ggplot(aes(n, time, col=method)) +
+   geom_line() + geom_point() +
+   scale_x_log10() + scale_y_log10() +
+   labs(title = paste("Time to look up", L, "keys from dictionary"),
+        y = "time, ms",
+        x = "dictionary size") +
+   theme(text = element_text(size=14))
+```
+
+We see that indexing by names is always inferior to the `match`.  Of the
+tested R methods, the clear
+winner is the hashed environment, at least up to the table size of hundreds
+of thousands.  The second place depends on the table size: built-in
+`match` gives better performance for up 10,000, for
+larger tables `fastmatch::fmatch` is better.
+
+The "best" is relative though.  Python manages
+to complete dictionary lookup in only little more time than R needs
+just to loop
+through the values with no lookup.  Part of it is probably related to
+less looping overhead in python, but dicts are probably also superior
+data structures compared to all the R methods tested here.  It remains to be seen if R manages to
+claim back some of the speed difference when using vectorized
+lookups. 

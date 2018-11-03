@@ -1,0 +1,1283 @@
+---
+title: "Taming Spark and SparkR"
+subtitle: "While Waiting for Better Documentation"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    toc: true
+    toc_float:
+      smooth_scroll: false
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                      cache=TRUE,
+                      message=FALSE)
+library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
+library(magrittr)
+ss <- sparkR.session(master = "local[2]",
+                     appName = "sparkNotes",
+                     sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
+                                      spark.driver.memory="8g",
+                                      log4j.logger.org.apache.parquet="INFO"
+                                      )
+                     )
+setLogLevel("WARN")
+```
+
+# Introduction
+
+SparkR is a very valuable approach when working with big data.
+Unfortunately it's documentation is rather sparse.  Here I have
+collected a number of solutions and explanations I have been
+struggling myself and hope others may find useful.
+
+## Preliminaries
+
+In this text I assume you are familiar with magrittr pipes `%>%` and
+`%T>%`.  These two piping constructs are an excellent complement to
+SparkR (and to _dplyr_ package and many other R tasks).  A good source to
+read about pipes is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/) section
+[Pipes](http://r4ds.had.co.nz/pipes.html). 
+
+## SparkR and _dplyr_
+
+SparkR takes a similar approach as _dplyr_ in transforming data, so I
+strongly recommend you to familiarize yourself with _dplyr_ before you
+start with spark.  An excellent source for this
+is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/), section
+[Data Transformations](http://r4ds.had.co.nz/transform.html).  The
+similarity if further stressed by a number of functions ("verbs" in
+Grolemund and Wickham's parlance) having exactly the same name and
+similar syntax.  True, in case of SparkR, there are often two
+versions, one with _dplyr_-similar syntax, and one with it's own
+distinct syntax.
+
+The fact that the syntax is the same can cause issues, however.  For
+instance, selection of certain variables can be done with `select`:
+```{r selectSparkDplyr, eval=FALSE}
+select(data.frame, col, ...) # dplyr
+select(SparkDataFrame, col, ...) # SparkR
+```
+There are two potential issues here:
+
+1. The syntax is not exactly the same: where _dplyr_ expects a list of
+unquoted variable names, _SparkR_ expects a list of _quoted_ names
+(there are other options too, see
+[Selecting variables](#selecting-variables)).
+2. Apparently, the generic `select`, initiated by _dplyr_, is unable
+to invoke the `SparkDataFrame` method.  Instead you see an obscure
+error like _Error in UseMethod("select_") : no applicable method for
+'select_' applied to an object of class "SparkDataFrame"_.  If you
+want to use both _dplyr_ and _SparkR_, load _dplyr_ before you load
+_SparkR_. 
+
+Besides select, the common functions include `mutate` and `rename`.
+
+
+
+# General concepts
+
+## RDD
+
+The central data structure in spark is _Resilient Distributed Dataset_
+(RDD).  Resilient means it can be recovered using an earlier stage and
+the _RDD lineage_ information.  
+
+So RDD is not just a dataset: a number in RDD is not just a number, but
+a number plus information where this number comes from.
+
+
+### Checkpointing
+
+As one operates repeatedly on the same data, the RDD lineage may grow
+without limits.  This happens, for instance, if you add data to an RDD
+in a loop, and each time also filter out certain observations.  This
+manifests with RDD operations getting slower and slower, one may also get
+`java.lang.StackOverflowError`-s.  A very valuable resource for
+seeing and debugging the RDD lineages is the web monitoring port
+4040 (the default value).  
+
+A way to _break the lineage_ is to use _checkpointing_.  Checkpointing
+saves the current dataframe as "just data", without any historical
+information.  If should be saved on a fault-tolerant file system, such
+as HDFS, to ensure the whole process is fault-tolerant.  All the
+following execution plans now take the resulting
+dataframe as a blank sheet (well, blank in terms of lineage, not data
+content!). 
+Checkpointing can be done like this:
+```{r, eval=FALSE}
+setCheckpointDir("/tmp")
+                           # note: have to set checkpoint dir
+df2 <- checkpoint(df1)
+```
+Now `df2` is a lineage-less dataframe.
+
+However, checkpointing is not without it's downsides.  It saves data
+on the disk, and this may be quite slow.  Second, it may take quite a
+bit storage as you are essentially writing all your data on disk in
+uncompressed format.  (Have to check if `unpersist` helps to delete
+checkpoints). 
+
+
+# Installing and Invoking Spark
+
+## Installation
+
+Local installation on linux is very easy and straightforward:
+
+1.
+[download the latest version](https://spark.apache.org/downloads.html)
+2. decompress it into a suitable location (e.g. `$HOME/local`)
+3. If you intend to use spark from outside of R, you should also set 
+```bash
+SPARK_HOME=$HOME/local/spark-x.x.x-bin-hadoop
+```
+or whatever is your exact installation directory.  When only relying
+on R, the location of spark home can also be set when initializing
+spark session.
+
+[Windows installation](https://dzone.com/articles/working-on-apache-spark-on-windows)
+is more involved.
+
+
+## Configuration
+
+### Getting Run-Time Configuration
+
+The basic run-time configuration can be returned by `sparkR.conf()`.
+Without any arguments it returns all set options:
+```{r}
+sparkR.conf()
+```
+Note that there is no obvious entry for parallelism.  When invoked
+locally, it is visible as the entry of `spark.master`, here
+"local[2]", but no dedicated number is provided (2.3.1).
+
+
+### Compression Codecs
+
+By default, spark compresses parquet files by snappy codec which
+creates rather large temporary files.  You have to configure it explicitly to use something else, such as "gzip".  The codec must
+be specificed during the spark session initialization through _sparkConfig_
+argument.  _sparkConfig_ is a list of configuration options in the
+form of _name_ = _value_ and name for parquet compression is
+_spark.sql.parquet.compression.codec_.  Value must be a string.  For instance:
+
+```r
+ss <- sparkR.session(master = "local[8]",
+                     appName = "mySparkApp",
+                     sparkConfig=list(spark.sql.parquet.compression.codec="gzip")
+                     )
+```
+
+Note: this must be done when spark session is initialized, later calls
+to `sparkR.conf` do not work.  Neither can you configure spark before
+you have initialized the sparkSession.
+
+
+### Java heap memory
+
+Spark driver memory can be set when creating the spark session with
+the `spark.driver.memory` option.  It takes character values like `"4g"`:
+
+```{r javaHeapMemory, eval=FALSE}
+ss <- sparkR.session(master = "local[2]",
+                     sparkConfig=list(spark.driver.memory="8g")
+                     )
+```
+If this is too small, you get java out-of-memory errors related to
+java heap space.
+
+
+
+### Temporary Directories
+
+Spark stores quite a bit of temporary data on disk so you should
+ensure you have plenty of disk space.  The location of temporary
+folders can be set in the environment variable `SPARK_LOCAL_DIRS` as a
+comma-separated list of directories:
+```bash
+SPARK_LOCAL_DIRS="$HOME/tmp,/tmp"
+```
+This creates temporary folders in two locations, one in `$HOME/tmp` and another in
+`/tmp`.  The folders appear in pairs, names like
+`blockmgr-6e392c2c...` and `spark-f0e4221e...`.
+
+Spark splits data to be saved roughly equally onto both of these
+devices.  This means, in particular, that when one of the devices is
+full, spark fails even if there is still plenty of space on the
+other (2.1.2).
+
+
+# Data input
+
+## From R to spark and back
+
+An R dataframe can be transformed to a spark dataframe using
+`createDataFrame` function, the reverse is done by `collect`.  For
+instance: 
+```{r createDataFrame}
+dfa <- data.frame(a=1:2) %>%
+   createDataFrame()
+dfa
+dfa %>% collect()
+```
+
+However, note you cannot transform 0-row R dataframes into spark in
+this way
+```{r createEmptyDataframe, eval=FALSE}
+dfa <- data.frame(a=integer()) %>%
+   createDataFrame()
+```
+will give an unhelpful error regarding to subscript out of bounds.
+
+
+
+## How to read csv files
+
+CSV files are one of the most common and versatile forms of data.
+SparkR reads these pretty well but unfortunately, the documentation is
+not good enough to get started.  The basic syntax is:
+
+```{R loadDF, eval=FALSE}
+loadDF(fName,
+       source="csv",
+       header="true",
+       sep=",")
+```
+
+The most important arguments are:
+
+* `fName`:  the file name.  The unix home directory marker `~` does
+  not seem to work (it is taken as a literal character in the file
+  name), unlike in ordinary R.  However, there are a number of good
+  news:
+    * compressed files, at least `.bz2`,  are decompressed
+      transparently (2.2.0).
+	* `fName` can be a shell pattern corresponding to multiple files,
+	  such as `dir/*.csv`.
+	  In that case all these files are read and stacked
+      into the resulting data frame.  
+	* `fName` can also be the folder's name (both with and
+      without the trailing slash) in which case all
+      files in that folder are read.  Note: in this case `loadDF` loads all
+      the files in that folder, including non-csv ones.
+* `source`: should be "csv" here
+* `header`: whether the file contains the first line as column names.
+  Defaults to "false" which reads the eventual header names as the
+  first line, and names columns to `_c0`, `_c1` etc. (2.2.0).  Note:
+  you have to specify java-ish `"true"` and `"false"` (in quotes) here, not R-ish
+  `TRUE` and `FALSE`.
+* `sep`: field separator, default ",".
+* there are more arguments.
+
+
+`loadDF` loads everything as string type, you may want to convert the
+columns afterwards (this can probably also be achieved by schemas).
+
+There is an alternative function, `read.df`, that differs from loadDF
+by the default arguments.
+
+
+## Parquet files
+
+```{R read.parquet, eval=FALSE}
+read.parquet(file)
+```
+
+* `file`: file name, actually the name of the folder where parquet
+  holds it's files
+    * `file` accepts certain shell patterns: `*`, `?`, and brace
+      expansion.  However, only a single set of brace expansion is
+      allowed, and only with commas, not `..` ranges (linux, 2.3.1).
+      Brace expansion can be combined with patters, so a name like
+      `/data/{home,work}/file*` is valid.
+    * If you want to read all parquet file (or rather folders) in a
+      directory, you have to specify `file` as `path/to/directory/*`.
+      If you leave out the trailing wildcard `*`, you get
+      an error _Unable to infer schema for Parquet_ (2.3.1).
+
+
+# Data selection and subsetting
+
+## Selecting variables {#selecting-variables}
+
+Spark supports several ways to select (and order) columns from a
+dataframe.  The main methods are `select` function and R-style `[]`
+indexing: 
+```{r select, cache=FALSE}
+dfa <- data.frame(family=c("Hu", "Xi"),
+                  name=c("Jintao", "Jinping"),
+                  yob=c(1942, 1953)) %>%
+   createDataFrame()
+dfa[,c("yob", "family")] %>%
+   collect()
+dfa %>% select("yob", "family") %>%
+   collect()
+```
+`select` is rather permissive in it's arguments, in addition to the
+above, one can also use `select(c("yob", "family"))` and
+`select(list("yob", "family"))`.
+
+
+## Filtering observations
+
+The way to filter observations is `filter`.  It expects a column
+expression.
+
+Example:
+```{r filter}
+dfa %>% filter(column("yob") > 1950) %>%
+   collect()
+```
+Filter will not work with multiple condidions, you have to use logical
+operators. 
+
+Filter wants your values to be of a single class, including a single
+value for S3 classes.  This sometimes creates warnings, e.g. with
+dates that have class of `c("POSIXct", "POSIXt")`:
+```{r multiClassWarningExample}
+df <- data.frame(date = ISOdatetime(2018,10,17,14,34,12)) %>%
+   createDataFrame()
+df %>% filter(column("date") == ISOdatetime(2018,10,17,14,34,12)) %>%
+   collect()
+```
+It still works, but the warning is unpleasant.
+
+Note that you cannot use `suppressWarnings` with piping.
+
+
+# Working with data: the _map_ part
+
+## Accessing columns
+
+One can access single columns with the `$`-operator and the `column`
+function.  The `$`-operator works in a fairly similar manner than for
+ordinary data frames.  Note that in case of piping where your
+intermediate dataframe does not have a name, you may access the
+columns with `.$` way like `.$foo`.
+
+Function `column` is an alternative, it takes column name as a
+character: `column("foo")`.
+
+## Creating new columns: column expressions, `withColumn` and `mutate`
+
+There are three functions for computing on columns: `withColumn`,
+`mutate` and `transform`.  All of these can either create new, or
+overwrite existing columns.
+
+The arguments for `withColumn` are:
+```{r eval=FALSE}
+withColumn(dataframe, columnName, expression)
+```
+where `columnName` is a character column name (not a `Column` object),
+and expression is a column expression: something you can create from
+existing columns and constants using functions and arithmetic
+operators.  
+It may include mathematical and
+string operations and other column-oriented functions.  Take the example dataframe
+```{r withColumn}
+dfa %>%
+   collect()
+dfa %>%
+   withColumn("age2018", lit(2018) - column("yob")) %>%
+   collect()
+```
+The column expression, `lit(2018) - column("yob")`, computes the age
+in 2018.  As `column("yob")` is not a number (but a "Column" object),
+one cannot simply do `2018 - column("yob")`.  Arithmetic with numbers
+and columns is limited (there is no "-" function with signature
+"numeric", "Column").  `lit(2018)` creates a new constant column,
+and now we perform arithmetic of two columns instead of a numeric and
+a column.  However, arithmetic
+operators for columns can handle
+"numeric" further down in the signature:
+```{r signature}
+dfa %>%
+   withColumn("age2018", (column("yob") - 2018)*(-1)) %>%
+   collect()
+```
+Now R selects "-" with signature "Column" and "numeric", and this
+works well.
+
+`mutate` offers largely overlapping functionality, but it can take
+more than one computation at a time, and it's expressions are in the
+form `name = expression`.  We can achieve the above, and more, in the
+following example:
+```{r mutate}
+dfa %>%
+   mutate(age2018 = lit(2018) - column("yob"),
+          age2000 = lit(2000) - column("yob")
+         ) %>%
+   collect()
+```
+Note that `name` must be unquoted.  We need two `withColumn` commands to
+achieve equivalent results.
+
+Mutate has some quirks with short variable names, such as `x`
+sometimes not working and leading to obscure errors.
+
+Finally, `transform` seems to be pretty much an alias for `mutate`.
+
+
+### Constant columns
+
+Constant columns can be added with the `lit` function:
+```{r litExample}
+foo <- data.frame(a=1:2) %>%
+   createDataFrame()
+foo %>%
+   withColumn("b", lit(77)) %>%
+   collect()
+```
+will add a constant column _b = 77_ to the dataframe, `withColumn`
+will most likely figure out the correct type.
+
+You can add missing values in the same fashion.  However, if you just
+do `withColumn("c", lit(NA))`, you get a column of type _null_ which
+may cause trouble downstream (cannot save it in a parquet file, for
+instance).   You should _cast_ it into the correct type, for instance
+to "integer":
+```{r litNAExample}
+foo %>%
+   withColumn("b", cast(lit(NA), "integer")) %T>%
+   printSchema() %>%
+   collect()
+```
+Indeed, as the schema indicates, _b_ is now an integer.
+
+
+## Renaming columns
+
+There are two built-in functions for renaming.  `rename` expects a
+list of arguments in the form of `newName = existingColumn` (after the
+data frame argument).  Note: this is quoted or unquoted name = column,
+the right hand side must not be just
+a column name.  This is
+perhaps the easiest way to rename variables:
+```{r}
+data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
+data %>%
+   rename(id = column("a"), "name" = column("b")) %>%
+   collect()
+```
+
+`withColumnRenamed` expects two arguments (after the data frame
+argument): old column name and new column name.  Note: these are
+column names, not columns, and the order is the other way around:
+```{r, cache=FALSE}
+data <- createDataFrame(data.frame(a=1:2, b=c("Huang", "Goyal")))
+data %>%
+   withColumnRenamed("a", "id") %>%
+   withColumnRenamed("b", "name") %>%
+   collect()
+```
+
+However, certain short column names do not work (2.2.1) and exit with
+an uninformative error message:
+```{r}
+data %>%
+   rename("x" = column("a")) %>%
+   collect()
+```
+
+Name "xx" works, however:
+```{r}
+data %>%
+   rename("xx" = column("a")) %>%
+   collect()
+```
+
+## Converting columns
+
+### Casting with `cast`
+
+`cast(x, dataType)` is the general way of converting column `x` to a
+new data type.  `dataType` must be one of the
+[spark datatypes](https://spark.apache.org/docs/latest/sparkr.html#data-type-mapping-between-r-and-spark),
+not R data type.  In particular
+
+| R data type | spark data type|
+|-------------| ---------------|
+|     numeric | double         |
+
+
+### Numbers to strings
+
+A tailor-made way to make strings out of numbers is `format_string(format, column)`.  It appears
+to use standard C formatting specifications:
+```{r formatString}
+data %>%
+   withColumn("c", format_string("%10d", column("a"))) %>%
+   collect()
+```
+Note the space before the numbers in string format.
+
+When feeding a string column for `%d` format, spark fails with
+`IllegalFormatConversionException`: 
+`d != org.apache.spark.unsafe.types.UTF8String`.
+
+
+
+
+
+# Working with data: the _reduce_ part
+
+## aggregating with `agg`
+
+`agg` is the general aggregation function.  It takes the data frame
+and aggregation arguments.  For instance, let's count the number of
+non-missing entries in a data frame:
+```{r aggEx1}
+df <- data.frame(a=c(4, 1,NA)) %>%
+   createDataFrame()
+collect(df)
+df %>%
+   withColumn("b", cast(isNotNull(column("a")), "integer")) %>%
+   agg(n = sum(column("b")),
+       mean = avg(column("a"))) %>%
+   collect()
+```
+This will result in a dataframe that contain one column, _n_, value of
+which is the desired value.  Here aggregation is determined by the
+`sum` function, an `agg`-s helper function, that takes a numeric
+column (this is why we have to cast the logical column to an integer).
+
+Agg is very much similar to dplyr's `summarize` function: it
+aggregates data, but one must supply the aggregation rule.
+
+There is a long list of `agg`-s aggregation functions (`x` is a column):
+
+* `avg(x)`: average value.  Missings are ignored.
+* `count(x)`: count number of objects (alias `n`)
+* `n(x)`: count number of objects (alias `count`)
+
+
+# Merging 
+
+## `rbind`: concatenating by rows
+
+Adding nother dataframe underneath a spark dataframe is done with
+`rbind`, exactly as in case of base R:
+```{r rbind}
+names1 <- data.frame(name="sune", age=17) %>%
+   createDataFrame()
+names2 <- data.frame(name="jestin", age=33) %>%
+   createDataFrame()
+rbind(names1, names2) %>%
+   collect()
+```
+
+Both data frames must have the same columns in exactly the same
+order.  If the order does not match, you get an error `Names of input
+data frames are different`, even if the names are the same and the
+problem lies just in the order.
+
+
+## Merging and joining
+
+SparkR features two similar functions: `merge` and `join`.  They do
+not behave in quite the same manner.
+
+Merge syntax is rather similar to that of base::merge:
+```{r, eval=FALSE}
+merge(x, y, by, suffixes)
+```
+
+* `x`, `y` are data frame to be merged.
+* `by` is a vector of key columns, by default columns with similar
+  name in both data frames.  
+    * `by` columns can be of different type, for instance integer and
+      double columns still match.
+* `suffixes` is a character vector of 2 specifying different suffixes
+  for `x` and `y` to make unique names.
+    * Even if you want to retain just one version of the variable with
+      it's original name, you cannot specify something like
+      `suffices=c("", "_y")`.  You get an error.  (2.2.0)
+
+
+### Merge renames variables (2.2.0)
+
+If merging two data frames on a column of similar name, `merge` creates new variables
+like `foo_x` and `foo_y` according to the respective origin data
+frame.  For instance:
+```{r mergeRenames}
+foo <- createDataFrame(data.frame(a=1:2, b=11:12, c=c("a", "b")))
+bar <- createDataFrame(data.frame(a=1:2, b=21:22, d=c("x", "y")))
+merge(foo, bar, by="a") %>% collect()
+```
+If, instead of `by`, you specify both `by.x` and `by.y`, then it also
+renames the `b`-s:
+```{r mergeRenames2, dependson="mergeRenames"}
+merge(foo, bar, by.x="a", by.y="a") %>% collect()
+```
+
+Join, in turn, does not rename but still keeps both version of the join column in the data:
+```{r joinDoesntRename, dependson="mergeRenames"}
+join(foo, bar, foo$a == bar$a) %>% collect()
+```
+
+### Merging and "trivial" join conditions
+
+As stressed above, RDD is not just data but also information about how
+the data was created.  `merge` can use some of this lineage
+information.  In particular, if the key column is created through
+`lit()` constant, it refuses to merge.  See the following examples:
+```{r mergeNontrivial}
+foo <- data.frame(a=1:2, b=3:4) %>% createDataFrame()
+foo %>% collect()
+bar <- data.frame(c=5:6, a=c(0L,0L)) %>% createDataFrame()
+bar %>% collect()
+merge(foo, bar, all.x=TRUE) %>% collect()
+```
+Here we create two dataframes, `foo` and `bar` and merge these on
+column `a`.  As there are no common key values, the variables
+inherited from `bar` are all missing.  This is to be expected.
+
+Now let's modify this example with literal constants:
+```{r mergeTrivialData}
+baz <- data.frame(c=5:6) %>% createDataFrame() %>% withColumn("a", lit(0))
+baz %>% collect()
+```
+So the `baz` dataframe looks the same as `bar` above.  However, now
+merge knows that the keys are just constants:
+```{r mergeTrivial, eval=FALSE}
+merge(foo, baz, all.x=TRUE) %>% collect()
+```
+fails with _Join condition is missing or trivial_ error (2.3.1).  Remember:
+dataframe is not just data but also the lineage information!
+
+
+
+## Merging and lazy evaluation
+
+Spark's lazy evaluation makes debugging hard, the code may fail
+before it even reaches the problematic line.
+
+For instance, when ordering before merging where the merge introduces
+ambiguous columns you may see an error like: 
+
+```
+org.apache.spark.sql.AnalysisException: Reference 'b' is ambiguous, could be: b#3, b#10.;
+```
+
+For instance:
+```{r mergeFails, eval=FALSE}
+foo <- createDataFrame(data.frame(a=1:2, b=11:12))
+bar <- createDataFrame(data.frame(a=1:2, b=21:22))
+foo %>%
+   groupBy("a", "b") %>%
+   count() %>%
+   merge(bar, by="a") %>%
+   rename(a = column("a_x")) %>%
+   collect()
+```
+
+fails with error `Caused by: org.apache.spark.sql.AnalysisException:
+Reference 'b' is ambiguous, could be: b#3, b#10.;`.  The problem is
+multiple instance of `b` introduced through merge, but failure seems
+to occur
+at `groupBy("a", "b")`.
+
+However, a slightly simpler plan---just removing the `rename` part
+that seems unrelated to the problem---still works and demonstrates what
+happens at merge:
+```{r mergeWorks}
+foo <- createDataFrame(data.frame(a=1:2, b=11:12))
+bar <- createDataFrame(data.frame(a=1:2, b=21:22))
+foo %>%
+   groupBy("a", "b") %>%
+   count() %>%
+   merge(bar, by="a") %>%
+   collect()
+```
+By removing `rename(a = column("a_x"))` at the end of
+the previous example the code works, I guess this is related to how
+well can the code translated to spark execution plans.
+
+(Spark 2.2.1)
+
+
+# Ordering by Group
+
+Many common tasks require ordering by group.  SparkR has multi-column
+ordering function (`arrange`) and multi-column grouping (`groupBy`).
+Unfortunately, these two do not play together.  Assume we have
+temperature data
+```{r temperatureData, cache=FALSE}
+temp <- data.frame(month = c("Nov", "Nov", "Dec", "Dec"), day=c(1,15,1,15), temp=c(14,12,10,12)) %>%
+   createDataFrame()
+temp %>%
+   collect()
+```
+and we want to find the hottest day each month.  Unlike in `dplyr`, you
+cannot just do
+```{r, eval=FALSE}
+temp %>%
+   groupBy("month") %>%
+   arrange("temp") %>%
+   agg(maxDay = day[1])
+```
+as grouped data cannot be arranged in spark.
+
+## Window Functions
+
+A correct solution seems to be to use window functions.  Windows in
+SQL parlance are blocks of rows where one can do certain operations.
+Windows can be defined in a different ways, here we are interested
+partitioning data by keys into windows.  This can be done as
+`windowPartitionBy("month")`.  This tells spark that data must be
+"partitioned" by month (I guess the 'partition' here is not the same as
+RDD partition), and we can operate separately on these partitions.
+
+Now we want to order the partitions by temperature.  This can be
+achieved by `ws <- orderBy(windowPartitionBy("month"), "temp")`.  Note we
+first define the window partition, and thereafter it's ordering.  These
+operations form our _window specification_ `ws`.  This is just
+specification, we haven't touched the data yet.
+
+When done with window specification, one can use window functions.
+These can be invoked by `over(x, window)` where `x` is a column,
+mostly likely computed via window functions, and `window` is the
+window spec we defined above.  To solve the task above, we can add the
+row number (i.e. temperature rank) for each day in month.  So we can
+do:
+```{r}
+ws <- orderBy(windowPartitionBy("month"), "temp")
+temp %>%
+   mutate(n = over(row_number(), ws)) %>%
+   filter(column("n") == 1) %>%
+   collect()
+```
+(note the syntax `column("n")` to refer to the column "n").
+
+This approach works otherwise great, but unfortunately it picks the
+_lowest_ temperature day.  I haven't found a way to insert `desc`
+operator for `orderBy` sorting--it only accepts string column names,
+not `column("temp")`, no `desc("temp")`.  So we have to resort on a
+stupid trick by reversing the sign of temp:
+```{r}
+ws <- orderBy(windowPartitionBy("month"), "temp1")
+temp %>%
+   mutate(temp1 = -column("temp")) %>%
+   mutate(n = over(row_number(), ws)) %>%
+   filter(column("n") == 1) %>%
+   collect()
+```
+Obviously, in the final version we may drop obsolete variables and
+order the data according to month.
+
+
+## `arrange` - `groupBy`
+
+Note: it is tempting to do go the following way instead:
+```{r}
+temp %>%
+   arrange(column("month"), desc(column("temp"))) %>%
+   groupBy("month") %>%
+   agg(maxDay = first("day")) %>%
+   collect()
+```
+This is simple, and seems to work, at least locally.  Unfortunately there is no
+guarantee that `groupBy` preserves the order (see
+[SPARK-16207](https://issues.apache.org/jira/browse/SPARK-16207)).
+
+
+
+# arrange
+
+Spark dataframes can be ordered by `arrange` function.  It orders the
+data by "natural order", i.e. alphabetically for character columns and
+in numeric order for numerics.
+The syntax is
+similar to that of _dplyr_: `arrange(col, col, ...)`.  However, there
+are two separate functions:
+```r
+arrange("col1", "col2", ...)
+```
+and
+```r
+arrange(col1, col2, ...)
+```
+In the former case, `arrange` expects a list of column names, in the
+latter case a list of columns.
+The latter version also works with order-reversal function `desc`, the
+former version does not.
+As an example, use the temperature data from above:
+```{r}
+temp %>%
+   arrange("month", "temp") %>%
+   collect()
+temp %>%
+   arrange(column("month"), desc(column("temp"))) %>%
+   collect()
+```
+One cannot mix the two approaches: `arrange("x", column("y"))` will
+not work
+
+(2.2.1)
+
+
+
+# Working with strings
+
+The following examples use a tiny dataframe of names:
+```{r namesData, cache=FALSE}
+names <- data.frame(name=c("Barnier", "Beto")) %>%
+   createDataFrame()
+```
+
+## substrings with `substr`
+
+Substrings can be created with `substr`.  It's syntax is simple:
+```{r substr, eval=FALSE}
+substr(x, start, end)
+```
+
+* `x` is a column
+* `start`, `end` are the (1-based) start and end positions in the
+  string.  `start` and `end` must be specified, you cannot leave one
+  out to take everything.  `Inf` is not allowed either.
+  
+Example:
+```{r substrExample}
+names %>%
+   withColumn("x", substr(column("name"), 3, 30)) %>%
+   collect()
+```
+This extracts characters 3 to 30 (i.e. from 3 till end) from these
+names.  
+  
+**Warning**: in SparkR < 2.3.0, start position was to be
+given _one past_ the first character to be extracted.  So in the
+example above, one has to use `substr(column("names"), 4, 20)`
+
+
+## startsWith, endsWith
+
+These are utility functions that test if a string column starts or
+ends with a given substring.  These return a logical column.
+
+```{r startsWith, eval=FALSE}
+startsWith(column, substring)
+endsWith(column, substring)
+```
+
+Example:
+```{r endsWithExample}
+names %>%
+   withColumn("x", endsWith(column("name"), "to")) %>%
+   collect()
+```
+
+## Pattern in strings: `contain`
+
+`contain(column, pattern)` tests simple (non-regexp) patterns in
+string columns:
+```{r containExample}
+names %>%
+   withColumn("x", contains(column("name"), "ar")) %>%
+   collect()
+```
+Regexp patterns are treated literally (?) and do not work (2.3.1). 
+
+
+## Where is pattern in string: `instr`
+
+`instr(y, x)` finds the location of the first occurrence of substring
+(not regexp) `x` in column
+`y`.  Positions inside of string are counted from 1, returns 0 if the
+substring not found:
+```{r instrExample}
+names %>%
+   mutate(xs = instr(column("name"), "ar"),
+          xr = instr(column("name"), "a.")) %>%
+   collect()
+```
+Regexp patterns are treated literally (?) and do not work (2.3.1). 
+
+
+## Concatenating strings: `concat` {#concat}
+
+`concat(x, ...)` concatenates string column `x` with other columns:
+```{r concat}
+names %>%
+   mutate(mName = concat(lit("M. "), column("name"))) %>%
+   collect()
+```
+No space is inserted between the two concatenated columns.
+
+
+## Regexp replacement: `regexp_replace`
+
+Syntax: `regexp_replace(x, pattern, replacement)` where `x` is to
+column to operate on.  Pattern is a
+regexp, and replacement can contain [java regexp groups](https://docs.oracle.com/javase/7/docs/api/java/util/regex/Pattern.html) $1, $2 etc.
+```{r regexp_replaceExample}
+names %>%
+   withColumn("x", regexp_replace(column("name"), "r(.*)", "R")) %>%
+   collect()
+```
+
+Here is another example using java replacement group $1:
+```{r regexp_replaceGrouping}
+names %>%
+   withColumn("x", regexp_replace(column("name"), "r(.*)", "R$1")) %>%
+   collect()
+```
+
+
+
+# Handling Dates
+
+## Dates and Timestamps
+
+There are two time formats of choice: dates and timestamps.  Dates
+only represent a date (a day) while timestamps record the instance in
+seconds.  You probably want to use the former if the event spans the
+whole day (like birthday) and the latter if the event is about a
+specific point of time (say the beginning of a phone call).  Both dates and timestamps
+can be converted to each other.  Both dates and timestamps contain timezone
+information, timestamps are stored in UTC internally but when you
+`collect()` timestamp data, the result will be
+printed in the current (as set in your operating system) timezone by
+R.  The similar conversion occurs with dates, it will be converted to
+the date in your current timezone (as set in your operating system) at
+00:00:00 midnight in the date's timezone ([see below](#date-converting-spark-R)).
+
+There are three types of timestamps:
+
+* _timestamp_: ordinary timestamp
+* _utc\_timestamp_:
+* _unix\_timestamp_: just a number of seconds since the UNIX epoch
+  (1970-01-01).
+
+When comparing and converting dates and timestamps, spark assumes the
+date is a timestamp that occurs 00:00:00 at the relevant time zone.
+
+
+## Converting data in and out of timestamps
+
+We demonstrate the date handling below using this data frame:
+```{r, dateDF, cache=FALSE}
+dateDF <- data.frame(string=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")) %>%
+   createDataFrame()
+collect(dateDF)
+```
+
+### From character representation
+
+In
+CSV files the
+date data is usually in some form of _yyyy-mm-dd_ form which will be
+read as character string.  This can be converted to timestamps with
+`to_timestamp`.  However, this assumes the time is given in the
+current time zone (as set in your operating system):
+```{r, convertTime, cache=FALSE}
+dateDF2 <- dateDF %>%
+   withColumn("date", to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss"))
+collect(dateDF2)
+```
+As you can see, the result, printed in your current time zone,
+correspond exactly to the string representation.  `to_timestamp`
+assumes the time is in your current time zone.
+
+If the original time is not given in your current time zone, you can
+add the time zone descriptor by [`concat`](#concat) to the string.
+For instance, if the original time was given in Kabul time (UTC+4:30),
+you can add the tz descriptor "+04:30" (note the leading "0") while
+also adding TZ format symbol "XXX" (see more in
+[java SimpleDateFormat](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)): 
+```{r, convertTimeTZ}
+dateDF %>%
+   withColumn("date",
+              to_timestamp(concat(column("string"), lit("+04:30")),
+                           "MM/dd yyyy HH:mm:ssXXX")) %>%
+   collect()
+```
+Now the date-column is different from the string representation
+(unless your OS is set to the Afghan tz).
+
+The fact that time output is always converted to your local time zone
+may feel confusing and make code incoherent between different time
+zones.  In this case on should choose to keep time in _utc\_timestamp_:
+```{r, keepUTC}
+dateUTC <- dateDF %>%
+   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "Asia/Kabul")) %>%
+   collect()
+dateUTC
+```
+This converts the string date into an UTC timestamp, assuming the
+original data was given in the Afghanistan time.  From the R point of
+view, the _utc\_timestamp_ is just a _POSIXct_ object, exactly as
+_timestamp_ objects with no additional attributes, even not `tzone` set.
+
+
+
+### Formatting dates back to characters
+
+When we want to convert a _utc\_timestamp_ back to string representation in UTC, we
+can use `date_format(column, format string)` (note: we need 
+[java format symbols](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html) again).
+For instance:
+```{r dateFormatExample1, dependson="dateConvertExample1"}
+dateDF2 %>%
+   withColumn("date2", date_format(column("date"), "yyyyMMdd")) %>%
+   collect()
+```
+
+Alternatively, one can achieve a similar result with extractor
+functions `year`, `month`, `dayofmonth`, `hour`, `minute`, `second`.  For
+instance: 
+```{r dateFormatExample2, dependson="dateConvertExample1"}
+dateDF2 %>%
+   withColumn("date2", year(column("date"))*10000 +
+                       month(column("date"))*100 +
+                       dayofmonth(column("date"))) %>%
+   collect()
+```
+**Warning**: you must put the column in the first position in `withColumn`
+arithmetic expression.  A literal number in the first position, such
+as `10000*year(column("date"))` gives
+an error.
+
+(spark 2.2.0)
+
+
+### Converting between R and spark {#date-converting-spark-R}
+
+These rules apply when converting R dataframes into spark with
+`createDataFrame`.
+
+R _Date_-s will be converted to _date_ type.  This only applies to the
+objects of true _Date_ class, not to the dates with timezones in
+lubridate which are actually _POSIXct_ objects (except if the timezone
+is "UTC" or similar).
+
+R timestamps, i.e. _POSIXct_ objects will be converted to
+_timestamps_.  This also applies to dates with timezones as long as
+these are internally _POSIXct_ objects.
+```{r, dateTZExample}
+df <- data.frame(date=as.Date("2018-10-19"), dateTZ=lubridate::ymd("2018-10-19", tz="Asia/Kabul"))
+sapply(df, class)
+```
+The first column, _date_ is of class _Date_, the second is _POSIXct_.  
+```{r, dateTZSpark}
+df %>% createDataFrame() %>%
+   printSchema()
+```
+As you can see, _date_ is of class _date_, while _dateTZ_ is
+_timestamp_.  Dates with time zone set are not true dates in R.
+
+When converting the spark time objects back to R with `collect()`, one get's _POSIXct_
+objects from timestamps and _Date_-s from dates.  Both are normally
+printed for the current time zone (as set in your operating system).  
+
+Dates with timezones in spark are converted to _Date_ assuming the
+represent the instant 00:00:00 at the corresponding day and time zone
+(i.e. the TZ for this particular date),
+and the day of that instant in the _current timezone_ is converted to R
+_Date_ object.  So the result depends on your timezone settings!
+
+
+## Date-specific functions
+
+### Converting data
+
+#### `to_utc_timestamp`
+
+`to_utc_timestamp(y, x)` convert column _y_ into _utc\_timestamp_ in
+time zone `x`.  `x` must be provided as text (like _US/Pacific_),
+numeric form (as _-08:00_) does not work.
+
+```{r, to_utc_timestampExample}
+dateDF2 %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "US/Pacific")) %>%
+   collect()
+```
+Seems like _utc\_timestamp_ is not converted to the local time zone
+when collecting/printing.
+_UTC_ is ahead of _US/Pacific_ by 8 hours in september and 7 hours in
+early March.
+
+
+#### Date as _utc\_timestamp_ into a given time zone: `from_utc_timestamp`
+
+`from_utc_timestamp(y, x)`: converts _y_ into timestamp in time zone _x_
+
+* `y`: column.  Columns of type _utc\_timestamp_ are supported.
+* `x`: string, time zone.  A time zone the system understands.
+
+Example:
+```{r from_utc_timestamp}
+dateDF2 %>%
+   withColumn("shanghaitime", from_utc_timestamp(column("date"), "Asia/Shanghai")) %>%
+   collect()
+```
+Indeed, Shanghai time is 8 hours ahead of UTC.
+
+
+#### Get date from timestamp or string: `to_date`
+
+_timestamp_ includes time in seconds, _date_ only concerns dates.  You
+can convert the former to the latter as with `to_date(x, format)`
+where `x` is the column, and `format` is the format string, only
+applicable if `x` is a character column.  By default it uses ISO dates
+with `format = "yyyy-MM-dd"`. 
+
+Example:
+```{r to_dateExample}
+dateDF2 %>%
+   withColumn("ymd", to_date(column("date"))) %>%
+   collect()
+```
+
+#### _timestamp_ from character: `to_timestamp()`
+
+`to_timestamp(x, format)` converts column `x` to timestamp using
+[java SimpleDateFormat](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)
+specifications. 
+
+An example script that performs all these tasks:
+```{r to_timestampExample, cache=FALSE}
+dateDF %>%
+   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   collect()
+```
+
+
+### Extracting date/time information
+
+#### Day of week `dayofweek`
+
+`dayofweek(x)`: day of week.  Sunday=1, Saturday=7.  Introduced in spark 2.3.0.
+
+* `x`: column.  Columns of type _utc\_timestamp_ are supported.
+
+Example:
+```{r dayofweek}
+dateDF2 %>%
+   withColumn("dayOfWeek", dayofweek(column("date"))) %>%
+   collect()
+```
+
+#### Hour `hour`
+
+Extract hour in the current (as set in os) timezone.
+
+`hour(x)`: hour, in 24h format.
+
+* `x`: column.  Columns of type _utc\_timestamp_ are supported.
+
+Example:
+```{r hour}
+dateDF2 %>%
+   withColumn("hour", hour(column("date"))) %>%
+   collect()
+```
+Note: hour is extracted from the timestamp after converting it into
+the current time zone.  Use date in _utc\_timestamp_ if you want the hour in UTC.
+
+```{r, hour2}
+dateDF2 %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "US/Pacific")) %>%
+   mutate(hour = hour(column("dateUTC"))) %>%
+   collect()
+```
+
+
+
+# other notes (draft)
+
+## Web Monitoring Ports
+
+if you start spark locally (--master local[n]), then the 8080 and 8081
+ports are not there, only 4040.
+
+
+
+## Merging by a large number of keys
+
+during merges (and possibly sorts) you may end up with being out of
+memory with error message like
+
+java.lang.IllegalArgumentException: Cannot allocate a page with more
+than 17179869176 bytes
+
+This is claimed to be related to grouping by key.  Spark tries to
+allocate equal amount of memory for each key, and if the distribution
+is skewed, it attempts to allocate too much.
+
+
+## finding NA-s
+
+I cannot understand how is.nan works.  Use instead
+
+isNull(col)
+
+or
+
+isNotNull(col)
+
+they can be used for filtering and they mark NA-s as TRUE
+
+
+## User-Defined Functions
+
+when doing UDF-s and return data.frame, you may get "Unsupported type
+for serialization" error.  This may be related to the fact that
+returned data.frame converts strings to factors and sparkR cannot
+serialize factors.  Use stringsAsFactors=FALSE
+
+
+## Parquet file for temporary data
+
+you cannot easily overwrite parquet file with new data.  The old cache
+remains in memory and it causes errors.
+
+
+## Reading Data
+
+read.parquet(): expects a list of files as the first argument
+read.df() expects a path where to read all the files as the first
+argument
+
+(spark 2.2)
+
+
+## pivot
+
+don't pivot on groupBy columns
+
+
+## dapply
+
+the chunks fed to dapply are roungly of the size \#obs/\#partitions. nParallel
+dapply processes are run in parallel.
+
+If you get error message `error in parallel:::mcfork unable to create
+a pipe` then you may have run out of processes.  Spark 2.1.2 and R
+3.5.0 did not play nicely with dapply leaving zombies, until you run
+out of the available processes.
+In this case fewer partitions may help.  Issue seems to be gone when
+switching to spark 2.3.1.
+
+One runs a separate dapply
+process for each partition?  At least the number of dapply invocations
+seems to
+equal the number of partitions.
+
+
+```{r finalize, include=FALSE}
+sparkR.stop()
+```
