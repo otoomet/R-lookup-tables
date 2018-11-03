@@ -1,0 +1,101 @@
+---
+title: "R loop speed"
+subtitle: "Different Approaches"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    code_folding: hide
+---
+
+# Setup
+
+R has a number of looping constructs, some strictly sequential and
+some that can be parallelized.  Here I measure their speed for
+tasks of different size.
+The tests are done on
+`r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'",
+intern=TRUE)` using R `r paste0(R.Version()$major, ".",
+R.Version()$minor)`. 
+
+```{r setup, echo=FALSE}
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                     message=FALSE,
+                     cache=TRUE,
+                     cache.path=".timing-loops-cache/",
+                     engine.path = list(python = "/usr/bin/python3")
+                     )
+library(foreach)  # for convenient loops
+library(doParallel)
+library(magrittr) # 'cause I love pipes
+library(microbenchmark) # to avoid delay when using the first time
+library(data.table)
+library(ggplot2)
+P <- 2
+                           # parallelism
+```
+
+We run a loop over "task", a function that computes trace of the
+inverse of a random matrix of a given size:
+```{r task}
+trace <- function(N) {
+   x <- matrix(rnorm(N*N), N, N)
+   sum(diag(solve(x)))
+}
+```
+
+We compute the trace _R_ times by submitting a vector of length _R_ to
+the looping construct.  In all cases we return a list of _R_ values as
+we model the case where we need to store (at least some) of the
+results computed in the loop.  We test the following loops below:
+
+1. plain `for`
+2. `lapply`
+3. `foreach(...) %do%`
+4. parallel `mclapply` running on multiple cores
+4. parallel `foreach %dopar%` with the `registerDoParallel`
+environment. 
+
+The loops are run as follows:
+
+```{r loops}
+forLoop <- function(R) {
+   a <- list(length(R))
+   for(i in seq(along=R)) {
+      a[i] <- trace(N)
+   }
+   a
+}
+
+lapplyLoop <- function(R) {
+   lapply(seq(R), function(x) trace(N))
+}
+
+doLoop <- function(R) {
+   foreach(x = seq(R)) %do% trace(N)
+}
+
+mclapplyLoop <- function(R) {
+   mclapply(seq(R), function(x) trace(N), mc.cores=P)
+}
+
+doparLoop <- function(R) {
+   foreach(w = seq(R)) %dopar% trace(N)
+}
+```
+
+We use _microbenchmark_ library and report timing in milliseconds and
+`r P`-fold parallelism.
+
+
+## Small task: _N = 10_ and _R=100_
+
+```{r small}
+N <- 10
+R <- 100
+microbenchmark(forLoop(R), lapplyLoop(R), doLoop(R), mclapplyLoop(R), doparLoop(R))
+```
