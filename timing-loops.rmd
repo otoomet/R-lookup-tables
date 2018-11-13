@@ -21,7 +21,8 @@ The tests are done on
 intern=TRUE)` using R `r paste0(R.Version()$major, ".",
 R.Version()$minor)`. 
 
-```{r setup, echo=FALSE}
+```{r setup, include=FALSE}
+options(width=90)
 knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
                      message=FALSE,
@@ -54,6 +55,7 @@ we model the case where we need to store (at least some) of the
 results computed in the loop.  We test the following loops below:
 
 1. plain `for`
+2. `while` with manual counter increments
 2. `lapply`
 3. `foreach(...) %do%`
 4. parallel `mclapply` running on multiple cores
@@ -65,8 +67,18 @@ The loops are run as follows:
 ```{r loops}
 forLoop <- function(R) {
    a <- list(length(R))
-   for(i in seq(along=R)) {
-      a[i] <- trace(N)
+   for(i in seq(R)) {
+      a[[i]] <- trace(N)
+   }
+   a
+}
+
+whileLoop <- function(R) {
+   a <- list(length(R))
+   i <- 0
+   while(i < R) {
+      i <- i + 1
+      a[[i]] <- trace(N)
    }
    a
 }
@@ -89,13 +101,163 @@ doparLoop <- function(R) {
 ```
 
 We use _microbenchmark_ library and report timing in milliseconds and
-`r P`-fold parallelism.
+no parallelism (_P = 1_).
 
 
-## Small task: _N = 10_ and _R=100_
+# Small task: _N = 10_ and _R=100_
 
-```{r small}
+## No parallelism
+
+```{r small, dependson=c("task", "loops")}
 N <- 10
 R <- 100
-microbenchmark(forLoop(R), lapplyLoop(R), doLoop(R), mclapplyLoop(R), doparLoop(R))
+P <- 1
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), whileLoop(R),
+               lapplyLoop(R), doLoop(R), mclapplyLoop(R), doparLoop(R),
+               control=list(warmup=10))
 ```
+
+We can get a number of interesting results from the table.
+
+* Among the non-parallel loops, there are clearly two classes:
+    1. all the built-in loops (`for`, `while`, `lapply`) run at
+       virtually the same speed.
+	2. `foreach`-family is 5-6 times slower.  Apparently,
+      the large number of options causes noticeable overhead for
+      `foreach`.
+* Both parallel versions run with the parallel backend but only one
+  registered CPU core.  The good news is that in this case there is
+  virtually no extra overhead.  Managing just one worker is easy.
+  Parallel-enabled `foreach-%dopar%` run even faster than `foreach-%do%`.
+  
+## Parallelism
+
+We only test 2 and 4-fold parallelism (as the CPU has 4 cores).  As
+the built-in loops are virtually equal, we only benchmark the parallel
+versions with for-loop below.
+
+### 2-fold
+
+```{r smallP2, dependson=c("task", "loops")}
+P <- 2
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R),
+               doLoop(R), mclapplyLoop(R), doparLoop(R),
+               control=list(warmup=10))
+```
+
+### 4-fold
+
+```{r smallP4, dependson=c("task", "loops")}
+P <- 4
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R),
+               doLoop(R), mclapplyLoop(R), doparLoop(R),
+               control=list(warmup=10))
+```
+
+Handling more than one worker makes the parallel routines noticeably
+slower&mdash; these tasks are too small to actually benefit from
+parallel execution.
+`mclapply` runs at roughly 50% of the speed of `for`, the
+difference between `%do%` and `%dopar%` is more like 10%.  Spawning 4
+workers causes some additional overhead compared
+to the 2-worker case, 20% in case of `mclapply` and 3% for `%dopar%`. 
+
+
+# Small number of large tasks: _N = 500_ and _R=100_
+
+Next, we run a similar small number of large tasks (_N=500_).  
+
+## No parallelism
+
+```{r large, dependson=c("task", "loops")}
+N <- 400
+R <- 100
+P <- 1
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), whileLoop(R),
+               lapplyLoop(R), doLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+As you can see, when execution time reaches to seconds, all the loops
+run at virtually the same speed.  This is to be expected as the
+overhead is negligible next to the task of inverting `r N`x`r N` matrices.
+
+## Parallelism
+
+As all the contenders perform similarly here, we only compare the
+for-loop as the benchmark with two parallelized loops: `mclapply` and
+`%dopar%`
+
+### 2-fold parallelism
+
+```{r largeP2, dependson=c("task", "loops")}
+N <- 400
+R <- 100
+P <- 2
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+### 4-fold parallelism
+
+```{r largeP4, dependson=c("task", "loops")}
+N <- 400
+R <- 100
+P <- 4
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+The parallel results indicate that we get a close to linear increase in
+speed by adding the workers&mdash;at least this is true till the _P
+= 4_, the number of CPU cores.  `mclapply` and `%dopar%` perform
+identically well here.
+
+
+# The middle case: `lapply` or `foreach`?
+
+We saw that for small tasks, both `foreach` and parallelism have
+noticeable overheads.  But is there a task size where it pays off to
+use `mclapply` but not `%dopar%` for parallelization?  We try a
+medium-sized task (_N = 100_) with two workers, again using the for-loop as the
+benchmark: 
+
+```{r medium, dependson=c("task", "loops")}
+N <- 100
+R <- 100
+P <- 2
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+Indeed, for this task size we find that `mclapply` is noticeably
+faster than both of the other loops in the table.  The opportunity
+window for `mclapply` is relatively narrow though, further testing
+indicates that it's advantage is there for _N_ values of roughly
+between 50 and 150.
+
+
+
+# Conclusion
+
+For the task sizes analyzed here, there are two conclusions:
+
+* for small tasks, go for any of the built-in loops: `for`, `while` or
+  `lapply`.  They run at virtually the same speed, so pick whichever
+  is the most convenient.  `foreach` family is noticeably slower.
+* for large tasks, both built-in and `foreach`-loops are equivalent.
+  Just choose the most convenient one.
+* parallelizing small tasks is a wasted effort.  However, for large tasks
+  like the one tested here, all three loops are equally good.
+  
+However, the current post leaves number of cases out.  In particular,
+tiny tasks, and tasks that do not return a vector, were not tested
+here.
+>>>>>>> master
