@@ -255,3 +255,6 @@ For the task sizes analyzed here, there are two conclusions:
 * parallelizing small tasks is a wasted effort.  However, for large tasks
   like the one tested here, all three loops are equally good.
   
+However, the current post leaves number of cases out.  In particular,
+tiny tasks, and tasks that do not return a vector, were not tested
+here.
