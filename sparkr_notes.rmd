@@ -132,7 +132,7 @@ checkpoints).
 
 ## Installation
 
-### Installing Spark
+### Installing Spark {#installing-spark}
 
 As spark is running on Java VM, you need java.  Spark 2.2--2.4 only
 work on java 1.8.  If you already have a correct version of java
@@ -184,6 +184,8 @@ Correct java must be specified before you initiate the spark session.
 
 ## Starting Spark
 
+### Just get it to run
+
 Here we only describe how to start spark from inside R.  You have to
 a) load the library from a non-standard location, and b) initiate
 spark session.  This can be done along the following lines:
@@ -201,11 +203,29 @@ ss <- sparkR.session(master = "local[2]", appName = "spark demo")
 the `SPARK_HOME` points to the folder where spark is installed.  If you downloaded and
 decompressed it into `~/Downloads`, the correct path may look like
 `SPARK_HOME <- "~/Downloads/spark-2.4.0-hadoop2.7/R/lib"`.
-`lib.loc` argument points to "R/lib" folder inside it.
+`lib.loc` argument points to "R/lib" folder inside it.  Note:
+including `sparkHome` argument is only needed if you did not specify
+`SPARK_HOME` environment variable as indicated above under
+[installation](#installing-spark). 
 
 If you have to choose a specific java version
 ([see above](#installing-java)), do it _before you start spark
 session_.  You may as well do it before loading the library. 
+
+
+### Options
+
+`sparkR.session` accepts a number of options:
+
+* `master` is the location the spark master (driver).  `"local[n]"`
+  mean spark will be run locally, on your computer, utilizing _n_
+  cpus.  You can also use `"local[*]"` if you want to utilize all
+  logical cpus (one process per cpu thread).
+* `sparkConfig` is a list of configuration options.  The more
+  interesting ones are:
+    * `spark.driver.memory`: how much memory to allocate to the spark
+      driver (or the complete spark process if run locally).  Use
+      character strings, such as `"500m"` or `"4g"`.
 
 
 ## Configuration
