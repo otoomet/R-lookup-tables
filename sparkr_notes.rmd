@@ -132,7 +132,11 @@ checkpoints).
 
 ## Installation
 
-Local installation on linux is very easy and straightforward:
+### Installing Spark
+
+As spark is running on Java VM, you need java.  Spark 2.2--2.4 only
+work on java 1.8.  If you already have a correct version of java
+installed, the rest on linux and mac is just a straight sailing:
 
 1.
 [download the latest version](https://spark.apache.org/downloads.html)
@@ -142,11 +146,66 @@ Local installation on linux is very easy and straightforward:
 SPARK_HOME=$HOME/local/spark-x.x.x-bin-hadoop
 ```
 or whatever is your exact installation directory.  When only relying
-on R, the location of spark home can also be set when initializing
+on R, the location of spark home can be set when initializing
 spark session.
 
 [Windows installation](https://dzone.com/articles/working-on-apache-spark-on-windows)
-is more involved.
+is more involved: you have to set a few paths and permissions.
+
+
+### Installing correct version of java {#installing-java}
+
+If you have never previously installed java, you can just add the most
+recent Java 1.8.
+
+If you have an incompatible version, you can add another java fairly
+easily.  On debian-based **linux** (such as ubuntu), you can select the
+default java by
+```bash
+sudo update-alternatives --config javac
+```
+this updates a few symlinks to ensure the correct java version is
+taken as default.
+
+Another way is just to specify the `JAVA_HOME` environment variable.
+This approach also works on **Mac**, and it allows you to pick a
+specific version of java just for Spark while leaving the system
+defaults untouched.  When running Spark from inside R, the easiest
+approach is to set the environment variable by `Sys.setenv` with
+something like (on a mac)
+```{r, eval=FALSE}
+Sys.setenv(JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_52.jdk/Contents/Home")
+```
+where the path must correspond the correct Java 1.8 path on your
+computer. 
+
+Correct java must be specified before you initiate the spark session.
+
+
+## Starting Spark
+
+Here we only describe how to start spark from inside R.  You have to
+a) load the library from a non-standard location, and b) initiate
+spark session.  This can be done along the following lines:
+
+```{r, eval=FALSE}
+SPARK_HOME <- file.path(Sys.getenv("HOME"), "local", "spark")
+                           # this is the directory where your spark is located
+ss <- sparkR.session(master = paste0("local[1]"),
+                     sparkHome = SPARK_HOME,
+                     appName = "spark demo")
+                           # note: SparkR with capital S
+ss <- sparkR.session(master = "local[2]", appName = "spark demo")
+                           # note: sparkR with lower case s
+```
+the `SPARK_HOME` points to the folder where spark is installed.  If you downloaded and
+decompressed it into `~/Downloads`, the correct path may look like
+`SPARK_HOME <- "~/Downloads/spark-2.4.0-hadoop2.7/R/lib"`.
+`lib.loc` argument points to "R/lib" folder inside it.
+
+If you have to choose a specific java version
+([see above](#installing-java)), do it _before you start spark
+session_.  You may as well do it before loading the library. 
 
 
 ## Configuration
@@ -1175,7 +1234,7 @@ dateDF2 %>%
 
 Extract hour in the current (as set in os) timezone.
 
-`hour(x)`: hour, in 24h format.
+`hour(x)`: hour (integer), in 24h format.
 
 * `x`: column.  Columns of type _utc\_timestamp_ are supported.
 
