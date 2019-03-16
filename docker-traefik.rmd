@@ -1,0 +1,340 @@
+---
+title: "Docker and Traefik"
+subtitle: "Notes by a frustrated newbie"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    toc: true
+    toc_float:
+      smooth_scroll: false
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                      cache=FALSE, 
+                      message=FALSE)
+library(magrittr)
+```
+
+# Introduction
+
+I new almost zero experience with web development, however, for a team
+project I agreed to build a REST API for a web app.  Getting the basic
+API up and running (using [R/plumber](https://www.rplumber.io/)) was fairly straightforward.  What
+turned to a substantial task was to add https security to it.
+
+As plumber does not implement https itself, I had to rely on some sort
+of frontend.  I decided to go for [traefik](https://traefik.io/),
+apparently a very popular reverse proxy framework, and set everything
+up using docker services.
+This had probably been an easy and quick task for experienced network
+people, but for a newbie it took a few days of trials and errors and frutstration.  Hope
+others will find some of my experience useful.
+
+
+# How did we get there
+
+In order to extract information from legal documents, we need
+high-quality training data.  However, creating it may be a slow and tedious task.  We developed a
+web app, based on [swipes for
+science](https://swipesforscience.org/) using javascript/axios
+framework that queries data from the server and pre-fills the fields for
+faster and less error-prone manual work.  The app gets its data from a
+server.  This is why we need the API.
+
+The server is mostly
+locked down, but has port 8080 open for the API.  I do not have full
+root access to the server.
+
+
+# Plumber
+
+I chose R and plumber for two reasons: I know R very well, and plumber
+seems to be easy for setting up simple API-s.  Indeed, this was the
+case.  So far I have had only minimal issues with the plumber side of
+the API, and this has been mostly related to my network ignorance.
+Just two notes: in order to make you API accessible from outside, you
+have to
+
+* allow CORS by setting something like
+```{r eval=FALSE}
+cors <- function(req, res) {
+   res$setHeader("Access-Control-Allow-Origin", "*")
+   plumber::forward()
+}
+```
+* bind it to 0.0.0.0 by something like
+```{r eval=FALSE}
+pr <- plumber::plumb('api.R')
+pr$run(port=args$port,  host="0.0.0.0")
+```
+
+(Unfortunately I still have only a vague idea what this does...)
+
+
+# docker
+
+Installing docker was trivial.  Also, the documentation needed to get my API
+up and running in the docker was sufficiently available and soon I was
+able to create my own container with API in it.  My dockerfile looks
+like this:
+
+```{dockerfile}
+FROM r-base
+LABEL description="run the API server using local port 7887"
+RUN apt-get update
+RUN apt-get install --no-install-recommends --yes imagemagick
+RUN ["Rscript", "-e", "install.packages(c('data.table', 'plumber', 'magrittr', 'base64enc', 'argparser', 'log4r', 'R.utils'))"]
+WORKDIR api
+COPY api/api.R api/startServer.R bin/conf.R bin/utils.R ./
+VOLUME ["/data", "/project", "/logs"]
+EXPOSE 7887
+CMD ["Rscript", "startServer.R", "--port", "7887"]
+```
+
+As it was not hard to create the docker container, I explain these
+steps only briefly.
+
+* FROM imports the base container.  This is essentially your operating
+  system your stuff will run on later.  _r-base_ is a stripped-down
+  ubuntu with the latest R installed.
+* I also install imagemagick as my API converts images.  As _r-base_
+  is ubuntu-based, you install packages using the usual apt family of
+  commands. 
+* Next, I install all necessary R packages.
+* **COPY** copies the necessary code files into current **WORKDIR**,
+  the directory where the code will be run later
+* **VOLUME** declares external mounts, external in the sense that
+  these link to the world outside of the container.  These are mounted
+  later.
+* **EXPOSE** tells the container that the port 7887 should be
+  accessible from outside of it.
+* and finally, there is the command to start the API.
+
+
+# Traefik: where I got stuck
+
+Plumber does not implement https/TLS security.  I agree that
+mission-critical components, such as security, is better to leave for
+dedicated software.  Traefik seems to be a popular modern choice in
+this regard.
+
+Unfortunately, for me, it's documentation is much sparser, and loaded
+with network terminology (well, what else can you expect from a
+network proxy...).  There are number of easy intros available but I
+have a few notable differences: first, I cannot use the port 8080 on server
+for traefik webUI, at least not as easily, as this port is the only
+one open for the API.  Second, I do not want to keep http open, only
+https.  Third, I do not want to use _LetsEncrypt_ TLS certificate as I
+have a dedicated certificate for our workgroup.  Finally, I also want
+to pull up both API and traefik (and potentially more services)
+together through `docker stack deploy`.  I was unable to find a good
+introduction that checked all these boxes.
+
+## docker stack configuration `docker-compose.yml`
+
+For `docker stack deploy` we need `docker-compose.yml` configuration file.
+This is the current version:
+
+```{yaml}
+version: '3.5'
+
+services:
+  api:
+    image: otoomet/api
+    # ports:
+    #   - ":7887"
+    #   if I uncomment this, the container's 7887 will be exposed on
+    #   the hosts 8080 bypassing traefik
+    deploy:
+      labels:
+        - traefik.backend=api
+        - "traefik.frontend.rule=Host:server.example.com,localhost;PathPrefixStrip:/swipes"
+        # works both on tess and localhost
+        - traefik.port=7887
+    volumes:
+      - $DATAROOT:/data:ro
+      - $PROJECTDIR:/project
+      - $HOME/logs:/logs
+    networks:
+      - traefik-public
+  traefik:
+    image: traefik
+    ports:
+      - "8079:8079"
+      # The Web UI, keep 8080 clear for API
+      - "8080:8080"
+      # API entry
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # So that Traefik can listen to the Docker events
+      - $CODEDIR/api/traefik.toml:/etc/traefik/traefik.toml
+      - $LOGSDIR:/logs
+      - $KEYFILE:/cert/swipes.key:ro
+      - $CERTFILE:/cert/swipes.crt:ro
+    deploy:
+      labels:
+        - traefik.enable=true
+        # needed for traefik UI
+    networks:
+      - traefik-public
+networks:
+  traefik-public:
+    external: true
+    name: traefik-public
+```
+
+It contains quite a few entries I discovered through trial and error,
+sometimes it took me hours of experimenting.  Notes:
+
+* when declaring the services, do not declare ports as `8080:7887`.
+  This would expose the service container's 7887 as hosts 8080
+  bypassing traefik and TLS security.
+* `deploy` and `labels`.  The documentation indicates that `labels`
+  for services should be under `deploy`.  However, I was able to get
+  API up (but not traefik GUI) without the `deploy` section by
+  declaring `labels` directly under `api` adn `traefik`.  Even more,
+  moving certain labels under `deploy` did not work.  I still don't
+  know what's going on but I suspect that if you define labels under
+  `deploy`, you have to define all labels there.
+* `traefik.backend=api`.  This is tells traefik to connect backend
+  _api_ in traefik.toml configuration file to the `api` service here.
+  If not specified, **traefik fails to connect** to `api`!
+*
+  `traefik.frontend.rule` is necessary to tell traefik which requests
+  that hit it should be forwarded to `api`.  We have three rules here:
+    - `Host:server.example.com` means that the requests must have host
+      as `server.example.com`.  
+    - Ditto with `localhost`, for testing
+      purposes.  Note the comma inbetween, this means that both
+      `server.example.com` and `localhost` qualify as queries to be
+      redirected. 
+	- finally, `PathPrefixStrip:/swipes` tells traefik that not
+      everything going to these hosts should be directed to the api
+      service, only queries in the form
+      `server.example.com/swipes/...` and `localhost/swipes/...`.  And
+      the `Strip`-part tells that when forwarded, the `swipes`-part
+      must be stripped from the query.
+	  
+* Traefik documentation also shows how to set the rules in
+  `traefik.toml` file but I haven't been able to get those rules
+  loaded.  So I keep my rule here.  
+  `traefik.frontend.rule` is a must.  Otherwise traefik simply does
+  not forward anything to the API.
+* finally, `traefik.port=7887` tells traefik to forward the relevant
+  requests to port 7887 to the api-s container.  This is also a must.
+* `volumes`: this is the way to connect your containers to the outside
+  world in the sense of the host file system.  `docker-compose.yml`
+  happily accepts environment variables, so I have a separate
+  cofiguration script that sets these to the relevant folders/files.
+  This also allows me to easily change between the production and mockup
+  setup. 
+* finally, `networks`.  Here I use a custom separately created network
+  to keep my stack running.  I don't think it is necessary, if not
+  specified, the automatically generated network should do.  But if
+  frequently restarting during tests, the automatically generated may
+  fail to start sometimes, so it is a nice-to-have thing.  You can
+  create it with the command `docker network creat -d overlay
+  trafik-pubic`.  The _overlay_-driver is necessary.  Note also that
+  if you create the external network, you have to list it in the
+  separate network section (at the end here) as external.
+
+This was about the API service.  Next _traefik_.
+* `ports`: I want to expose both the API port 8080 and 8079 for the
+  UI.  (the latter is normally blocked from outside but still
+  accessible on server).
+* `volumes`: as above, these are the channels how the containered
+  service links to the host file system.  Two comments:
+  `/var/run/docker.sock` entry is necessary for traefik to be able to
+  talk to the docker daemon; second note that `$KEYFILE` and
+  `$CERTFILE` are files, not folders.
+* `deploy`-`labels`: `traefik.enable=true` is needed to get the UI
+  up.
+  
+
+## traefik configuration `traefik.toml`
+
+This is a place where we should be able to include most of the traefik
+configuration.  However,  I have not had success with all options.
+
+```{toml}
+defaultEntryPoints = ["https"]
+
+[docker]
+  endpoint = "unix:///var/run/docker.sock"
+  swarmMode = true
+  
+[web]
+  address = ":8079"
+
+logLevel = "INFO"
+
+[entryPoints]
+  [entryPoints.https]
+    address = ":8080"
+    [entryPoints.https.tls]
+      [[entryPoints.https.tls.certificates]]
+      certFile = "/cert/swipes.crt"
+      keyFile = "/cert/swipes.key"
+
+[frontends]
+  [frontends.swipes]
+  backend = "api"
+```
+
+Comments:
+
+* `defaultEntryPoints = ["https"]`: sorry, I don't know what it does.
+  I think it simply tells traefik where to direct the requests, and
+  has nothing to do with https security.
+* `[docker]` `endpoint` is a must and must be connected to the docker
+  daemon socket in the _docker-compose.yml_ file.
+* `[docker]` `swarmMode` not quite sure what it does--I had the API
+  working without it, just I was unable to get traefik UI up.  I
+  suspect it is related to whether the labels are listed in _deploy_
+  section in the _docker-compose.yml_ file.
+* `[web]` `address` is the graphical UI address.  It is normally 8080
+  but I need another port, as explained above.
+* `logLevel="INFO"`: it is obvious.  Well, it should be.  So far I
+  have not been able to log anything else besides error messages.  So
+  I don't know what is wrong here.
+* `entryPoints.https`:
+    - address = ":8080" means this entrypoint should listen to 8080.
+      This is the only port open on my server.
+    - the next entries point to the files of TLS certificates.  These
+      files were mounted under volumes in the _docker-compose.yml_
+      above.  All these entries together do the magick of https for
+      port 8080.
+
+* finally, `frontends` lists the different services accessible from
+  outside, and the corresponding `backend` tells which backend must be
+  invoked when the corresponding request arrives.  These must
+  correspond to the _traefik.backend_ and _trafik.frontend.rule_
+  entries in the _docker-compose.yml_ file.
+  
+All this is probably trivial for a network guru, and seems pretty
+straightforward even when just reading it here.  But it is not at all
+straighforward when confronted with traefik documentation with little
+network knowledge.
+
+
+## TLS certificates
+
+Certificates are needed for https encryption.  Major websites use
+certificates approved by common authorities, public keys of which are
+built into common software tools.  But you can easily create a
+self-signed one using `openssl`.  These come in pairs, essentially
+public and private key, and if using a self-signed one, you have to
+provide the public key to your network software.  Otherwise you may
+get more or less explanatory network errors.
+
+Note that many common programs assume the certificates have file
+extension _key_, _crt_, or _pem_.

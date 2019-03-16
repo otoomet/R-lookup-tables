@@ -1283,6 +1283,8 @@ dateDF2 %>%
 if you start spark locally (--master local[n]), then the 8080 and 8081
 ports are not there, only 4040.
 
+8080 is for master
+
 
 
 ## Merging by a large number of keys
