@@ -492,8 +492,13 @@ dfa %>%
 Note that `name` must be unquoted.  We need two `withColumn` commands to
 achieve equivalent results.
 
-Mutate has some quirks with short variable names, such as `x`
-sometimes not working and leading to obscure errors.
+Mutate has some quirks:
+
+* short variable names, such as `x`, sometimes do not work and lead
+  to obscure errors.
+* if you use `mutate` to create more than one variable, you cannot use
+  the previously created variables in the next expressions.  You need
+  a new `mutate` call. 
 
 Finally, `transform` seems to be pretty much an alias for `mutate`.
 
@@ -1107,6 +1112,9 @@ names %>%
    collect()
 ```
 No space is inserted between the two concatenated columns.
+
+`concat` can only concat columns, not other expressions, even not
+`cast` expressions where converting other columns to strings.
 
 
 
