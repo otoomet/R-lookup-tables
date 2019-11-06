@@ -23,6 +23,7 @@ knitr::opts_chunk$set(fig.height=100/25.4,
                       message=FALSE)
 library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
 library(magrittr)
+Sys.setenv(JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/")
 ss <- sparkR.session(master = "local[2]",
                      appName = "sparkNotes",
                      sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
@@ -611,7 +612,7 @@ When feeding a string column for `%d` format, spark fails with
 
 # Working with data: the _reduce_ part
 
-## aggregating with `agg`
+## aggregating with `agg` {#aggregating-with-agg}
 
 `agg` is the general aggregation function.  It takes the data frame
 and aggregation arguments.  For instance, let's count the number of
@@ -638,7 +639,9 @@ There is a long list of `agg`-s aggregation functions (`x` is a column):
 
 * `avg(x)`: average value.  Missings are ignored.
 * `count(x)`: count number of objects (alias `n`)
+* `first(x, na.rm=FALSE)`: return the first element in the group
 * `n(x)`: count number of objects (alias `count`)
+* `sum(x)`: add the values
 
 
 # Merging 
@@ -870,6 +873,55 @@ This is simple, and seems to work, at least locally.  Unfortunately there is no
 guarantee that `groupBy` preserves the order (see
 [SPARK-16207](https://issues.apache.org/jira/browse/SPARK-16207)).
 
+
+
+# Pivoting
+
+Pivoting is a way to transform data frame from long to wide format,
+and perform aggregation in the process.
+
+The arguments for `pivot` are:
+```{r, eval=FALSE}
+pivot(x, colname, values=list())
+```
+It takes in a grouped dataframe `x`, and pivoting column `colname`.
+The result will be grouped by distinct values of the groups (this is
+what the grouped data is about) vertically, and by distinct pivoting
+values of the pivot column (this is what `colname` does) horizontally.  One may
+also supply a pre-defined list of distinct pivoting values, it is
+claimed to be more efficient than to let spark figure these out
+itself.  This vertical-horizontal grouping should be aggregated using
+the `agg` function ([see](#aggregating-with-agg)).  The entries for
+non-existing combinations will be `NA` in the aggregated table.
+
+Let's create a simple long-form dataframe of three columns: `quarter`,
+`id`, and `result`:
+```{r createDfp, cache=FALSE}
+dfp <- data.frame(quarter=rbinom(10, 3, 0.3),
+                  id = (100 + rbinom(10,4,0.5)) %>%
+                     as.character(),
+                  result=runif(10)) %>%
+   createDataFrame()
+dfp %>%
+   collect() %>%
+   head()
+```
+and pivot it into wide form: group the data by `quarter` (in rows) and
+by `id` (in columns), and each cell in the table is sum of the
+corresponding `result`s:
+```{r, cache=FALSE}
+dfp %>%
+   groupBy("quarter") %>%
+   pivot("id") %>%
+   agg(sum(column("result"))) %>%
+   collect()
+```
+
+Notes:
+
+* distinct integer values will be converted to floats and you see
+  values like `100.0` instead of `100`.  Convert the pivoting columns
+  to characters.
 
 
 # arrange
@@ -1339,6 +1391,11 @@ argument
 ## pivot
 
 don't pivot on groupBy columns
+
+
+## select
+
+cannot select columns of grouped data
 
 
 ## dapply
