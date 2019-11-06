@@ -25,7 +25,7 @@ library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "
 library(magrittr)
 Sys.setenv(JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/")
 ss <- sparkR.session(master = "local[2]",
-                     appName = "sparkNotes",
+                     appName = "sparkr notes",
                      sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
                                       spark.driver.memory="8g",
                                       log4j.logger.org.apache.parquet="INFO"
@@ -37,16 +37,21 @@ set.seed(1)
 
 # Introduction
 
-SparkR is a very valuable approach when working with big data.
+SparkR is a very valuable tool when working with big data.
 Unfortunately it's documentation is rather sparse.  Here I have
 collected a number of solutions and explanations I have been
-struggling myself and hope others may find useful.
+struggling myself with and hope others may find useful.
+
+The source of this document is [on
+Github](https://github.com/otoomet/R-lookup-tables) (see file sparkr_notes.rmd), all comments and
+issues are welcome there.
+
 
 ## Preliminaries
 
-In this text I assume you are familiar with magrittr pipes `%>%` and
-`%T>%`.  These two piping constructs are an excellent complement to
-SparkR (and to _dplyr_ package and many other R tasks).  A good source to
+In this text I assume you are familiar with magrittr pipes `%>%`, %<>% and
+`%T>%`.  Pipes are an excellent complement to
+SparkR (and to many other R tasks).  A good source to
 read about pipes is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/) section
 [Pipes](http://r4ds.had.co.nz/pipes.html). 
 
@@ -59,7 +64,7 @@ is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co
 [Data Transformations](http://r4ds.had.co.nz/transform.html).  The
 similarity if further stressed by a number of functions ("verbs" in
 Grolemund and Wickham's parlance) having exactly the same name and
-similar syntax.  True, in case of SparkR, there are often two
+similar syntax.  In case of SparkR, there are often two
 versions, one with _dplyr_-similar syntax, and one with it's own
 distinct syntax.
 
@@ -91,7 +96,8 @@ Besides select, the common functions include `mutate` and `rename`.
 ## RDD
 
 The central data structure in spark is _Resilient Distributed Dataset_
-(RDD).  Resilient means it can be recovered using an earlier stage and
+(RDD).  Resilient means that if something breaks in the workflow, for
+instance a cluster node dies, it can be recovered from an earlier stage and
 the _RDD lineage_ information.  
 
 So RDD is not just a dataset: a number in RDD is not just a number, but
@@ -106,7 +112,7 @@ in a loop, and each time also filter out certain observations.  This
 manifests with RDD operations getting slower and slower, one may also get
 `java.lang.StackOverflowError`-s.  A very valuable resource for
 seeing and debugging the RDD lineages is the web monitoring port
-4040 (the default value).  
+(default value 4040).
 
 A way to _break the lineage_ is to use _checkpointing_.  Checkpointing
 saves the current dataframe as "just data", without any historical
@@ -121,13 +127,12 @@ setCheckpointDir("/tmp")
                            # note: have to set checkpoint dir
 df2 <- checkpoint(df1)
 ```
-Now `df2` is a lineage-less dataframe.
+Now `df2` is a "lineage-free" dataframe.
 
 However, checkpointing is not without it's downsides.  It saves data
 on the disk, and this may be quite slow.  Second, it may take quite a
 bit storage as you are essentially writing all your data on disk in
-uncompressed format.  (Have to check if `unpersist` helps to delete
-checkpoints). 
+uncompressed format.
 
 
 # Installing and Invoking Spark
@@ -195,12 +200,12 @@ spark session.  This can be done along the following lines:
 ```{r, eval=FALSE}
 SPARK_HOME <- file.path(Sys.getenv("HOME"), "local", "spark")
                            # this is the directory where your spark is located
-ss <- sparkR.session(master = paste0("local[1]"),
+library("SparkR", lib.loc=file.path(SPARK_HOME, "R", "lib"))
+                           # note: SparkR with capital S
+ss <- sparkR.session(master = "local[1]",
+                           # note: sparkR with lower case s
                      sparkHome = SPARK_HOME,
                      appName = "spark demo")
-                           # note: SparkR with capital S
-ss <- sparkR.session(master = "local[2]", appName = "spark demo")
-                           # note: sparkR with lower case s
 ```
 the `SPARK_HOME` points to the folder where spark is installed.  If you downloaded and
 decompressed it into `~/Downloads`, the correct path may look like
@@ -228,7 +233,26 @@ session_.  You may as well do it before loading the library.
     * `spark.driver.memory`: how much memory to allocate to the spark
       driver (or the complete spark process if run locally).  Use
       character strings, such as `"500m"` or `"4g"`.
+      If this is too small, you get java out-of-memory errors related to
+      java heap space.
+    * `spark.sql.parquet.compression.codec`: by default, spark
+      compresses parquet files by snappy codec which creates rather
+      large temporary files.  You can specify a different codec, such
+      as `"gzip"`,
+	  during the session initialization.  Later calls
+      to `sparkR.conf` do not work.  It's value is a string.
 
+Here is an example of initiating the spark session while also setting
+the configuration options:
+```{r, eval=FALSE}
+ss <- sparkR.session(master = "local[2]",
+                     appName = "sparkNotes",
+                     sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
+                                      spark.driver.memory="8g",
+                                      log4j.logger.org.apache.parquet="INFO"
+                                      )
+                     )
+```
 
 ## Configuration
 
@@ -241,43 +265,7 @@ sparkR.conf()
 ```
 Note that there is no obvious entry for parallelism.  When invoked
 locally, it is visible as the entry of `spark.master`, here
-"local[2]", but no dedicated number is provided (2.3.1).
-
-
-### Compression Codecs
-
-By default, spark compresses parquet files by snappy codec which
-creates rather large temporary files.  You have to configure it explicitly to use something else, such as "gzip".  The codec must
-be specificed during the spark session initialization through _sparkConfig_
-argument.  _sparkConfig_ is a list of configuration options in the
-form of _name_ = _value_ and name for parquet compression is
-_spark.sql.parquet.compression.codec_.  Value must be a string.  For instance:
-
-```r
-ss <- sparkR.session(master = "local[8]",
-                     appName = "mySparkApp",
-                     sparkConfig=list(spark.sql.parquet.compression.codec="gzip")
-                     )
-```
-
-Note: this must be done when spark session is initialized, later calls
-to `sparkR.conf` do not work.  Neither can you configure spark before
-you have initialized the sparkSession.
-
-
-### Java heap memory
-
-Spark driver memory can be set when creating the spark session with
-the `spark.driver.memory` option.  It takes character values like `"4g"`:
-
-```{r javaHeapMemory, eval=FALSE}
-ss <- sparkR.session(master = "local[2]",
-                     sparkConfig=list(spark.driver.memory="8g")
-                     )
-```
-If this is too small, you get java out-of-memory errors related to
-java heap space.
-
+"local[2]", but no dedicated number is provided (2.3, 2.4).
 
 
 ### Temporary Directories
@@ -961,7 +949,7 @@ corresponding `result`s:
 ```{r, cache=FALSE}
 dfp %>%
    groupBy("quarter") %>%
-   pivot("id") %>%
+   pivot("quarter") %>%
    agg(sum(column("result"))) %>%
    collect()
 ```
@@ -1463,11 +1451,6 @@ argument
 (spark 2.2)
 
 
-## pivot
-
-don't pivot on groupBy columns
-
-
 ## select
 
 cannot select columns of grouped data
@@ -1489,6 +1472,11 @@ One runs a separate dapply
 process for each partition?  At least the number of dapply invocations
 seems to
 equal the number of partitions.
+
+## checkpointing 
+
+Have to check if `unpersist` helps to delete
+checkpoints.
 
 
 ```{r finalize, include=FALSE}
