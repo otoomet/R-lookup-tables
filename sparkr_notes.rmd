@@ -32,6 +32,7 @@ ss <- sparkR.session(master = "local[2]",
                                       )
                      )
 setLogLevel("WARN")
+set.seed(1)
 ```
 
 # Introduction
@@ -644,9 +645,11 @@ There is a long list of `agg`-s aggregation functions (`x` is a column):
 * `sum(x)`: add the values
 
 
-# Merging 
+# Messing data around: merge, order and pivot
 
-## `rbind`: concatenating by rows
+## Merging 
+
+### `rbind`: concatenating by rows
 
 Adding nother dataframe underneath a spark dataframe is done with
 `rbind`, exactly as in case of base R:
@@ -665,7 +668,7 @@ data frames are different`, even if the names are the same and the
 problem lies just in the order.
 
 
-## Merging and joining
+### Merging and joining
 
 SparkR features two similar functions: `merge` and `join`.  They do
 not behave in quite the same manner.
@@ -687,7 +690,7 @@ merge(x, y, by, suffixes)
       `suffices=c("", "_y")`.  You get an error.  (2.2.0)
 
 
-### Merge renames variables (2.2.0)
+#### Merge renames variables (2.2.0)
 
 If merging two data frames on a column of similar name, `merge` creates new variables
 like `foo_x` and `foo_y` according to the respective origin data
@@ -708,7 +711,7 @@ Join, in turn, does not rename but still keeps both version of the join column i
 join(foo, bar, foo$a == bar$a) %>% collect()
 ```
 
-### Merging and "trivial" join conditions
+#### Merging and "trivial" join conditions
 
 As stressed above, RDD is not just data but also information about how
 the data was created.  `merge` can use some of this lineage
@@ -740,7 +743,7 @@ dataframe is not just data but also the lineage information!
 
 
 
-## Merging and lazy evaluation
+### Merging and lazy evaluation
 
 Spark's lazy evaluation makes debugging hard, the code may fail
 before it even reaches the problematic line.
@@ -789,7 +792,7 @@ well can the code translated to spark execution plans.
 (Spark 2.2.1)
 
 
-# Ordering by Group
+## Ordering by Group
 
 Many common tasks require ordering by group.  SparkR has multi-column
 ordering function (`arrange`) and multi-column grouping (`groupBy`).
@@ -811,7 +814,7 @@ temp %>%
 ```
 as grouped data cannot be arranged in spark.
 
-## Window Functions
+### Window Functions {#window-functions}
 
 A correct solution seems to be to use window functions.  Windows in
 SQL parlance are blocks of rows where one can do certain operations.
@@ -859,9 +862,9 @@ Obviously, in the final version we may drop obsolete variables and
 order the data according to month.
 
 
-## `arrange` - `groupBy`
+### `arrange` - `groupBy`
 
-Note: it is tempting to do go the following way instead:
+Note: it is tempting to do go the following way instead ([see](#ordering-with-arrange)):
 ```{r}
 temp %>%
    arrange(column("month"), desc(column("temp"))) %>%
@@ -875,56 +878,7 @@ guarantee that `groupBy` preserves the order (see
 
 
 
-# Pivoting
-
-Pivoting is a way to transform data frame from long to wide format,
-and perform aggregation in the process.
-
-The arguments for `pivot` are:
-```{r, eval=FALSE}
-pivot(x, colname, values=list())
-```
-It takes in a grouped dataframe `x`, and pivoting column `colname`.
-The result will be grouped by distinct values of the groups (this is
-what the grouped data is about) vertically, and by distinct pivoting
-values of the pivot column (this is what `colname` does) horizontally.  One may
-also supply a pre-defined list of distinct pivoting values, it is
-claimed to be more efficient than to let spark figure these out
-itself.  This vertical-horizontal grouping should be aggregated using
-the `agg` function ([see](#aggregating-with-agg)).  The entries for
-non-existing combinations will be `NA` in the aggregated table.
-
-Let's create a simple long-form dataframe of three columns: `quarter`,
-`id`, and `result`:
-```{r createDfp, cache=FALSE}
-dfp <- data.frame(quarter=rbinom(10, 3, 0.3),
-                  id = (100 + rbinom(10,4,0.5)) %>%
-                     as.character(),
-                  result=runif(10)) %>%
-   createDataFrame()
-dfp %>%
-   collect() %>%
-   head()
-```
-and pivot it into wide form: group the data by `quarter` (in rows) and
-by `id` (in columns), and each cell in the table is sum of the
-corresponding `result`s:
-```{r, cache=FALSE}
-dfp %>%
-   groupBy("quarter") %>%
-   pivot("id") %>%
-   agg(sum(column("result"))) %>%
-   collect()
-```
-
-Notes:
-
-* distinct integer values will be converted to floats and you see
-  values like `100.0` instead of `100`.  Convert the pivoting columns
-  to characters.
-
-
-# arrange
+## Ordering with `arrange` {#ordering-with-arrange}
 
 Spark dataframes can be ordered by `arrange` function.  It orders the
 data by "natural order", i.e. alphabetically for character columns and
@@ -956,6 +910,120 @@ One cannot mix the two approaches: `arrange("x", column("y"))` will
 not work
 
 (2.2.1)
+
+
+## Pivoting
+
+Pivoting is a way to transform dataframe from long to wide format,
+and perform aggregation in the process.
+
+The arguments for `pivot` are:
+```{r, eval=FALSE}
+pivot(x, colname, values=list())
+```
+It takes in a grouped dataframe `x` and pivoting column `colname`.
+The result will be grouped by distinct values of the groups vertically (this is
+what the grouped data is about), and by distinct
+values of the pivot column horizontally (this is what `colname` does).
+The new column names are created from the pivoting column values,
+potentially combined with the name of the aggregation function.
+One may
+supply a pre-defined list of distinct pivoting values, it is
+claimed to be more efficient than to let spark figure these out
+itself.  This vertical-horizontal grouping should be aggregated using
+[the `agg` function](#aggregating-with-agg)).  The entries for
+non-existing combinations will be `NA` in the aggregated table.
+
+Pivot has it's quirks:
+
+* distinct integer values will be converted to floats and you see
+  values like `100.0` instead of `100` in column names.  Convert the pivoting columns
+  to characters. (spark 2.4.4)
+
+
+### Example: Create an aggregated crosstable
+
+Let's create a simple long-form dataframe of three columns: `quarter`,
+`id`, and `result`:
+```{r createDfp, cache=FALSE}
+dfp <- data.frame(quarter=1 + rbinom(12, 3, 0.3),
+                  id = (100 + rbinom(12,4,0.5)) %>%
+                     as.character(),
+                  result=runif(12)) %>%
+   createDataFrame()
+dfp %>%
+   collect() %>%
+   head()
+```
+and pivot it into wide form: group the data by `quarter` (in rows) and
+by `id` (in columns), and each cell in the table is sum of the
+corresponding `result`s:
+```{r, cache=FALSE}
+dfp %>%
+   groupBy("quarter") %>%
+   pivot("id") %>%
+   agg(sum(column("result"))) %>%
+   collect()
+```
+Now we have a wide form data frame where for each quarter (row) we
+have sum of results for each id (columns).  Note the many missing
+values: for instance, id 101 did not have any results in quarter 2.
+
+
+###  Example: find rankings
+
+As the next example, let's find the largest and second-largest result
+for each quarter-id combination using the same data as above.
+
+Our first task is to rank the results by group.  We use [window
+functions](#window-functions) to do this:
+
+```{r, cache=FALSE}
+ws <- orderBy(windowPartitionBy("quarter", "id"), "negResult")
+```
+As we want to find the largest values (i.e. rank in descending order),
+we have to create `negResult`, the negative of the `result`, as spark
+`orderBy` can only do it in ascending order.  Thereafter  we
+create the corresponding rank
+variable, and retain only the two largest values.  Finally, we create
+a new column `idrank` that contains the id and rank in a form that is
+suitable for the final column name after pivoting (remember, pivot
+creates column names from values):
+
+```{r, cache=FALSE}
+dfp %<>%
+   mutate(negResult = -column("result")) %>%
+   mutate(rank = over(row_number(), ws)) %>%
+                           # compute the descending rank 'rank'
+   filter(column("rank") <= 2) %>%
+                           # retain only the two largest results
+   mutate(idrank = concat(lit("id-"), column("id"),
+                          lit("-"), column("rank")))
+                           # note: have to use 'concat',
+                           # not 'paste'
+                           # character constants must be
+                           # in 'lit'
+dfp %>%
+   collect()
+```
+
+Now we have everything prepared.  We group the result by quarter
+(quarters will remain in rows) and pivot by `idrank`, these will be in
+columns.  Finally we aggregate by just picking the first value of
+`result`.  Aggregation mechanism is not very important here as all the
+quarter-id-rank groups should only contain a single value.
+
+```{r pivotRank, cache=FALSE}
+dfp %>%
+   groupBy("quarter") %>%
+   pivot("idrank") %>%
+   agg(first(column("result"))) %>%
+   collect()
+```
+
+Note the number of missing values in the result.  For instance, as id
+101 does not have any record for quarter 2, the corresponding entries
+are missing.
 
 
 
@@ -1039,7 +1107,10 @@ Regexp patterns are treated literally (?) and do not work (2.3.1).
 
 ## Concatenating strings: `concat` {#concat}
 
-`concat(x, ...)` concatenates string column `x` with other columns:
+`concat(x, ...)` concatenates string column `x` with other columns.
+If you want to insert a character constant you have to put into
+`lit(..)` function to create a constant column:
+
 ```{r concat}
 names %>%
    mutate(mName = concat(lit("M. "), column("name"))) %>%
@@ -1338,6 +1409,10 @@ ports are not there, only 4040.
 8080 is for master
 
 
+## knitr: spark objects cannot be cached
+
+This includes window specifications, dataframes
+
 
 ## Merging by a large number of keys
 
@@ -1407,7 +1482,7 @@ If you get error message `error in parallel:::mcfork unable to create
 a pipe` then you may have run out of processes.  Spark 2.1.2 and R
 3.5.0 did not play nicely with dapply leaving zombies, until you run
 out of the available processes.
-In this case fewer partitions may help.  Issue seems to be gone when
+pIn this case fewer partitions may help.  Issue seems to be gone when
 switching to spark 2.3.1.
 
 One runs a separate dapply

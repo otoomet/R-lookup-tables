@@ -27,9 +27,10 @@
 # spark temp data
 /metastore_db/
 
-# Temporary files created by R markdown
+# Temporary files created by R markdown, latex
 *.utf8.md
 *.knit.md
+*.log
 
 # editor backup
 *~
