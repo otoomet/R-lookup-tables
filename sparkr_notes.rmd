@@ -1095,16 +1095,19 @@ Regexp patterns are treated literally (?) and do not work (2.3.1).
 
 ## Concatenating strings: `concat` {#concat}
 
-`concat(x, ...)` concatenates string column `x` with other columns.
+`concat(x, ...)` concatenates column `x` with other columns.  Numeric
+columns are automatically converted to string colums.
 If you want to insert a character constant you have to put into
 `lit(..)` function to create a constant column:
 
 ```{r concat}
 names %>%
-   mutate(mName = concat(lit("M. "), column("name"))) %>%
+   mutate(yob = lit(1980L)) %>%
+   mutate(mName = concat(lit("M. "), column("name"), lit(" "), column("yob"))) %>%
    collect()
 ```
 No space is inserted between the two concatenated columns.
+
 
 
 ## Regexp replacement: `regexp_replace`
