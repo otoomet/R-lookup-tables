@@ -26,7 +26,7 @@ library(magrittr)
 
 # Introduction
 
-I new almost zero experience with web development, however, for a team
+I have next to zero experience with web development, however, for a team
 project I agreed to build a REST API for a web app.  Getting the basic
 API up and running (using [R/plumber](https://www.rplumber.io/)) was fairly straightforward.  What
 turned to a substantial task was to add https security to it.
@@ -35,20 +35,20 @@ As plumber does not implement https itself, I had to rely on some sort
 of frontend.  I decided to go for [traefik](https://traefik.io/),
 apparently a very popular reverse proxy framework, and set everything
 up using docker services.
-This had probably been an easy and quick task for experienced network
-people, but for a newbie it took a few days of trials and errors and frutstration.  Hope
+This is probably an easy and quick task for experienced network
+people, but for a newbie like me it took a few days of trials and errors and frutstration.  Hope
 others will find some of my experience useful.
 
 
 # How did we get there
 
-In order to extract information from legal documents, we need
+In order to automatically extract information from legal documents, we need
 high-quality training data.  However, creating it may be a slow and tedious task.  We developed a
 web app, based on [swipes for
 science](https://swipesforscience.org/) using javascript/axios
-framework that queries data from the server and pre-fills the fields for
-faster and less error-prone manual work.  The app gets its data from a
-server.  This is why we need the API.
+framework that queries data from the server, and pre-fills the fields for
+faster and less error-prone manual work.  The app gets its data from
+the server.  This is why we need the API.
 
 The server is mostly
 locked down, but has port 8080 open for the API.  I do not have full
@@ -77,7 +77,7 @@ pr <- plumber::plumb('api.R')
 pr$run(port=args$port,  host="0.0.0.0")
 ```
 
-(Unfortunately I still have only a vague idea what this does...)
+(Unfortunately I still have only a vague what all this means...)
 
 
 # docker
@@ -103,12 +103,12 @@ CMD ["Rscript", "startServer.R", "--port", "7887"]
 As it was not hard to create the docker container, I explain these
 steps only briefly.
 
-* FROM imports the base container.  This is essentially your operating
+* **FROM** imports the base container.  This is essentially your operating
   system your stuff will run on later.  _r-base_ is a stripped-down
   ubuntu with the latest R installed.
 * I also install imagemagick as my API converts images.  As _r-base_
   is ubuntu-based, you install packages using the usual apt family of
-  commands. 
+  commands, just preceded with **RUN** to run a linux command. 
 * Next, I install all necessary R packages.
 * **COPY** copies the necessary code files into current **WORKDIR**,
   the directory where the code will be run later
@@ -116,8 +116,9 @@ steps only briefly.
   these link to the world outside of the container.  These are mounted
   later.
 * **EXPOSE** tells the container that the port 7887 should be
-  accessible from outside of it.
-* and finally, there is the command to start the API.
+  accessible from outside of it.  Note that you still have to map it
+  somewhere on the host or another container.
+* and finally, **CMD** is the command to start the API.
 
 
 # Traefik: where I got stuck
@@ -127,11 +128,11 @@ mission-critical components, such as security, is better to leave for
 dedicated software.  Traefik seems to be a popular modern choice in
 this regard.
 
-Unfortunately, for me, it's documentation is much sparser, and loaded
+Unfortunately, traefik's documentation is much sparser, and loaded
 with network terminology (well, what else can you expect from a
-network proxy...).  There are number of easy intros available but I
-have a few notable differences: first, I cannot use the port 8080 on server
-for traefik webUI, at least not as easily, as this port is the only
+network proxy...).  There are number of easy intros available but my
+case has a few notable differences: first, I cannot use the port 8080 on server
+for traefik webUI, at least not directly as this port is the only
 one open for the API.  Second, I do not want to keep http open, only
 https.  Third, I do not want to use _LetsEncrypt_ TLS certificate as I
 have a dedicated certificate for our workgroup.  Finally, I also want
@@ -141,7 +142,10 @@ introduction that checked all these boxes.
 
 ## docker stack configuration `docker-compose.yml`
 
-For `docker stack deploy` we need `docker-compose.yml` configuration file.
+For `docker stack deploy` we need `docker-compose.yml` configuration
+file.  This lists all the _services_ to be run (here _traefik_ and
+_api_) and defines how they will be initiated, how these interact, and
+how the volumes on the host and containers are linked.
 This is the current version:
 
 ```{yaml}
@@ -242,12 +246,12 @@ sometimes it took me hours of experimenting.  Notes:
   specified, the automatically generated network should do.  But if
   frequently restarting during tests, the automatically generated may
   fail to start sometimes, so it is a nice-to-have thing.  You can
-  create it with the command `docker network creat -d overlay
-  trafik-pubic`.  The _overlay_-driver is necessary.  Note also that
+  create it with the command `docker network create -d overlay traefik-pubic`.  The _overlay_-driver is necessary.  Note also that
   if you create the external network, you have to list it in the
-  separate network section (at the end here) as external.
+  separate network section (here at the end) as external.
 
 This was about the API service.  Next _traefik_.
+
 * `ports`: I want to expose both the API port 8080 and 8079 for the
   UI.  (the latter is normally blocked from outside but still
   accessible on server).
@@ -326,7 +330,7 @@ straighforward when confronted with traefik documentation with little
 network knowledge.
 
 
-## TLS certificates
+# HTTPS and TLS certificates
 
 Certificates are needed for https encryption.  Major websites use
 certificates approved by common authorities, public keys of which are
@@ -338,3 +342,7 @@ get more or less explanatory network errors.
 
 Note that many common programs assume the certificates have file
 extension _key_, _crt_, or _pem_.
+
+Note that you can "ping" the https-protected services with http.  You
+get a binary response `15 03 01 00 02 02 0a`, telling you that the TLS
+security layer did not understand the HTTP request.
