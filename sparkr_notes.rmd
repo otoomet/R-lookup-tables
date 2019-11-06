@@ -902,8 +902,8 @@ not work
 
 ## Pivoting
 
-Pivoting is a way to transform dataframe from long to wide format,
-and perform aggregation in the process.
+Pivoting is a version of crosstable, way to transform dataframe from
+long to wide format, and perform aggregation in the process.
 
 The arguments for `pivot` are:
 ```{r, eval=FALSE}
@@ -919,14 +919,14 @@ One may
 supply a pre-defined list of distinct pivoting values, it is
 claimed to be more efficient than to let spark figure these out
 itself.  This vertical-horizontal grouping should be aggregated using
-[the `agg` function](#aggregating-with-agg)).  The entries for
+[the `agg` function](#aggregating-with-agg).  The entries for
 non-existing combinations will be `NA` in the aggregated table.
 
 Pivot has it's quirks:
 
 * distinct integer values will be converted to floats and you see
   values like `100.0` instead of `100` in column names.  Convert the pivoting columns
-  to characters. (spark 2.4.4)
+  to characters. (2.4.4)
 
 
 ### Example: Create an aggregated crosstable
@@ -943,8 +943,8 @@ dfp %>%
    collect() %>%
    head()
 ```
-and pivot it into wide form: group the data by `quarter` (in rows) and
-by `id` (in columns), and each cell in the table is sum of the
+and pivot it into a summary table: each row is `quarter`, each column is
+`id`, and each cell in the table is sum of the
 corresponding `result`s:
 ```{r, cache=FALSE}
 dfp %>%
