@@ -49,7 +49,7 @@ issues are welcome there.
 
 ## Preliminaries
 
-In this text I assume you are familiar with magrittr pipes `%>%`, %<>% and
+In this text I assume you are familiar with magrittr pipes `%>%`, `%<>%` and
 `%T>%`.  Pipes are an excellent complement to
 SparkR (and to many other R tasks).  A good source to
 read about pipes is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/) section
@@ -737,7 +737,7 @@ dataframe is not just data but also the lineage information!
 
 
 
-### Merging and lazy evaluation
+### Merging and lazy evaluation {#merging-and-lazy-evaluation}
 
 Spark's lazy evaluation makes debugging hard, the code may fail
 before it even reaches the problematic line.
@@ -765,7 +765,8 @@ fails with error `Caused by: org.apache.spark.sql.AnalysisException:
 Reference 'b' is ambiguous, could be: b#3, b#10.;`.  The problem is
 multiple instance of `b` introduced through merge, but failure seems
 to occur
-at `groupBy("a", "b")`.
+at `groupBy("a", "b")`.  Indeed, this is the only place in the code
+where we use the variable `b`.
 
 However, a slightly simpler plan---just removing the `rename` part
 that seems unrelated to the problem---still works and demonstrates what
@@ -781,9 +782,10 @@ foo %>%
 ```
 By removing `rename(a = column("a_x"))` at the end of
 the previous example the code works, I guess this is related to how
-well can the code translated to spark execution plans.
-
-(Spark 2.2.1)
+well can the code translated to spark execution plans.  See alse
+[arrange by a renamed column](#arrange-by-a-renamed-column) where
+something similar happens.
+(Spark 2.2.1, 2.4.4)
 
 
 ## Ordering by Group
@@ -905,7 +907,7 @@ temp %>%
 One cannot mix the two approaches: `arrange("x", column("y"))` will
 not work.  (2.2.1)
 
-### `arrange` by a renamed column
+### `arrange` by a renamed column {#arrange-by-a-renamed-column}
 
 Apparently you can rename a column and still arrange according to the
 old name.  For instance:
@@ -919,12 +921,15 @@ data.frame(a=3:1, b=rnorm(3)) %>%
 ```
 
 The dataframe does not contain column `a`, it is ordered by column
-`c`, nee `a`, instead.  (2.4.4)
+`c`, nee `a`, instead.  See alse [merging and lazy
+evaluation](#merging-and-lazy-evaluation) where something similar
+happens when renaming columns.
+(2.4.4)
 
 
 ## Pivoting
 
-Pivoting is a version of crosstable, way to transform dataframe from
+Pivoting is a version of crosstable, a way to transform dataframe from
 long to wide format, and perform aggregation in the process.
 
 The arguments for `pivot` are:
