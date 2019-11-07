@@ -874,6 +874,8 @@ guarantee that `groupBy` preserves the order (see
 
 ## Ordering with `arrange` {#ordering-with-arrange}
 
+### `arrange`
+
 Spark dataframes can be ordered by `arrange` function.  It orders the
 data by "natural order", i.e. alphabetically for character columns and
 in numeric order for numerics.
@@ -901,9 +903,23 @@ temp %>%
    collect()
 ```
 One cannot mix the two approaches: `arrange("x", column("y"))` will
-not work
+not work.  (2.2.1)
 
-(2.2.1)
+### `arrange` by a renamed column
+
+Apparently you can rename a column and still arrange according to the
+old name.  For instance:
+
+```{r, cache=FALSE}
+data.frame(a=3:1, b=rnorm(3)) %>%
+   createDataFrame() %>%
+   rename(c=column("a")) %>%
+   arrange(column("a")) %>%
+   collect()
+```
+
+The dataframe does not contain column `a`, it is ordered by column
+`c`, nee `a`, instead.  (2.4.4)
 
 
 ## Pivoting
