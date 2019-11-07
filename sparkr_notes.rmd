@@ -582,6 +582,7 @@ not R data type.  In particular
 
 | R data type | spark data type|
 |-------------| ---------------|
+|    character| string         |
 |     numeric | double         |
 
 
