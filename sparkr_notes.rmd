@@ -1196,6 +1196,9 @@ dateDF <- data.frame(string=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")) %>%
    createDataFrame()
 collect(dateDF)
 ```
+We start with the string representation (variable `string`) and
+convert  it into various other formats.
+
 
 ### From character representation
 
@@ -1210,8 +1213,8 @@ dateDF2 <- dateDF %>%
    withColumn("date", to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss"))
 collect(dateDF2)
 ```
-As you can see, the result, printed in your current time zone,
-correspond exactly to the string representation.  `to_timestamp`
+As you can see, the result printed in your current time zone,
+correspond exactly to the string representation: `to_timestamp`
 assumes the time is in your current time zone.
 
 If the original time is not given in your current time zone, you can
@@ -1232,7 +1235,7 @@ Now the date-column is different from the string representation
 
 The fact that time output is always converted to your local time zone
 may feel confusing and make code incoherent between different time
-zones.  In this case on should choose to keep time in _utc\_timestamp_:
+zones.  In this case one should choose to keep time in _utc\_timestamp_:
 ```{r, keepUTC}
 dateUTC <- dateDF %>%
    mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
