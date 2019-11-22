@@ -492,13 +492,16 @@ dfa %>%
 Note that `name` must be unquoted.  We need two `withColumn` commands to
 achieve equivalent results.
 
-Mutate has some quirks:
+Mutate has a few quirks:
 
 * short variable names, such as `x`, sometimes do not work and lead
   to obscure errors.
 * if you use `mutate` to create more than one variable, you cannot use
   the previously created variables in the next expressions.  You need
   a new `mutate` call. 
+* mutate seems to be less able to do computations inside column
+  expressions, see examples in
+  [`date_format`](#formatting-dates-back-to-characters). 
 
 Finally, `transform` seems to be pretty much an alias for `mutate`.
 
@@ -1250,7 +1253,7 @@ _timestamp_ objects with no additional attributes, even not `tzone` set.
 
 
 
-### Formatting dates back to characters
+### Formatting dates back to characters {#formatting-dates-back-to-characters}
 
 When we want to convert a _utc\_timestamp_ back to string representation in UTC, we
 can use `date_format(column, format string)` (note: we need 
@@ -1261,6 +1264,24 @@ dateDF2 %>%
    withColumn("date2", date_format(column("date"), "yyyyMMdd")) %>%
    collect()
 ```
+
+It appears `date_format` does not allow expressions in `column` if
+invoked with `mutate` and gives a really unintuitive error:
+```{r dateFormatMutate, dependson="dateConvertExample1", error=TRUE}
+dateDF2 %>%
+   mutate(date2 = date_format(column("date") %>%
+                              from_utc_timestamp("Asia/Kabul"), "yyyyMMdd")) %>%
+   collect()
+```
+However, this works when run through `withColumn`:
+```{r dateFormatWithColumn, dependson="dateConvertExample1", error=TRUE}
+dateDF2 %>%
+   withColumn("date2", date_format(column("date") %>%
+                                   from_utc_timestamp("Asia/Kabul"), "yyyyMMdd")) %>%
+   collect()
+```
+(spark 2.4.0)
+
 
 Alternatively, one can achieve a similar result with extractor
 functions `year`, `month`, `dayofmonth`, `hour`, `minute`, `second`.  For
