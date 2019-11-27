@@ -398,6 +398,17 @@ above, one can also use `select(c("yob", "family"))` and
 `select(list("yob", "family"))`.
 
 
+## Dropping variables
+
+Dropping variables can be achieved with `drop`.  Drop can handle a
+vector of variable names:
+```{r}
+vars <- c("name", "yob")
+dfa %>%
+   drop(vars) %>%
+   collect()
+```
+
 ## Filtering observations
 
 The way to filter observations is `filter`.  It expects a column
@@ -642,7 +653,7 @@ There is a long list of `agg`-s aggregation functions (`x` is a column):
 * `sum(x)`: add the values
 
 
-# Messing data around: merge, order and pivot
+# Messing data around: merge, order and pivot/reshape
 
 ## Merging 
 
@@ -930,7 +941,7 @@ happens when renaming columns.
 (2.4.4)
 
 
-## Pivoting
+## Pivoting {#pivoting}
 
 Pivoting is a version of crosstable, a way to transform dataframe from
 long to wide format, and perform aggregation in the process.
@@ -1042,6 +1053,102 @@ dfp %>%
 Note the number of missing values in the result.  For instance, as id
 101 does not have any record for quarter 2, the corresponding entries
 are missing.
+
+See also [reshaping to wide form](#pivoting-long-to-wide).
+
+
+## Reshaping
+
+### Wide to long
+
+Spark does not have built-in reshaping function for transforming wide
+to long format, but `explode` pretty
+much does the job.  It is slightly more circuituous though: first you
+have to create an array column of the desired individual columns, and
+thereafter you `explode` that column.  Let's create a wide form data
+frame below:
+```{r meltDF, cache=FALSE}
+dfm <- data.frame(id=1:2, ua=runif(2), ub=rnorm(2)) %>%
+   createDataFrame()
+dfm %>%
+   collect()
+```
+The task is to transform this to the long form.  First we can create a
+new array column by `create_array` and thereafter `explode` it into
+the desired shape:
+```{r melt1}
+dfm %>%
+   mutate(tmp = create_array(column("ua"), column("ub"))) %>%
+   mutate(value = explode(column("tmp"))) %>%
+   collect()
+```
+The result will still contain `ua` and `ub` column, and the array
+column `tmp`.  We may want to delete those.
+
+There is no direct approach to use a list of column names for creating
+the array column.  Instead, we can use `do.call` and the list of
+columns (not column names!) as it's argument.  The exact same result
+as above can be achieved through
+```{r melt2}
+cols <- c("ua", "ub")
+withColumn(dfm, "tmp",
+           do.call("create_array", lapply(cols, function(x) column(x)))) %>%
+   mutate(value=explode(column("tmp"))) %>%
+   drop(c(cols, "tmp")) %>%
+   collect()
+```
+Here we have deleted the original and temporary columns so the result
+is more likely what you had in mind as the long form data.
+
+However, the solution does not show explicitly which original variable
+each row corrsponds to.  In this simple example it iis obvious, these
+are just "a", "b", "a", "b" in this order, but in a more complex case
+we may need much more guidance.  In such case one can use `posexplode`
+function.  It explodes the array column into two columns: `pos`
+corresponds to the order in the array, and `col` to the value:
+```{r}
+dfm %>%
+   mutate(tmp = create_array(column("ua"), column("ub"))) %>%
+   select(c("id", posexplode(column("tmp")))) %>%
+   collect()
+```
+The code does the following: first it creates an array column `tmp`.
+Thereafter if _posexplodes_ this into a pair of columns: `pos` 0
+corresponds the value "a" and `pos` 1 to value "b".  And `col` are the
+corresponding values.  As `posexplode` creates two columns, you cannot
+use `mutate` as that function only creates a single column at time.  A
+more complete example may look as follows:
+```{r}
+cols <- c("ua", "ub")
+withColumn(dfm, "tmp",
+           do.call("create_array", lapply(cols, function(x) column(x)))) %>%
+   select(c("id", posexplode(column("tmp")))) %>%
+   mutate(type = ifelse(column("pos") == 0, "a", "b")) %>%
+   drop("pos") %>%
+   rename(value = column("col")) %>%
+   collect()
+```
+
+
+### Long to wide {#pivoting-long-to-wide}
+
+This can be achieved with [pivoting](#pivoting).  Here is an example:
+```{r ltfdf, cache=FALSE}
+df <- data.frame(id=c(72,72,811,811), type=c("a", "b", "a", "b"), val=rnorm(4)) %>%
+   createDataFrame()
+df %>%
+   collect()
+```
+Transform it into the wide form:
+```{r}
+df %>%
+   groupBy("id") %>%
+   pivot("type") %>%
+   agg(first(column("val"))) %>%
+   collect()
+```
+Note that the column names are the same as `type`-s.  See
+[pivoting](#pivoting) for more information.
 
 
 
