@@ -19,7 +19,7 @@ output:
 options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
 knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
-                      cache=TRUE,
+                      cache=FALSE,
                       message=FALSE)
 library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
 library(magrittr)
@@ -1275,12 +1275,14 @@ names %>%
 ## Dates and Timestamps
 
 There are two time formats of choice: dates and timestamps.  Dates
-only represent a date (a day) while timestamps record the instance in
+only represent a date (a day) while timestamps record the point of time in
 seconds.  You probably want to use the former if the event spans the
 whole day (like birthday) and the latter if the event is about a
 specific point of time (say the beginning of a phone call).  Both dates and timestamps
 can be converted to each other.  Both dates and timestamps contain timezone
-information, timestamps are stored in UTC internally but when you
+information by default.  Timestamps are stored internally as
+microseconds since UNIX epoch, including the timezone information, 
+and when you
 `collect()` timestamp data, the result will be
 printed in the current (as set in your operating system) timezone by
 R.  The similar conversion occurs with dates, it will be converted to
@@ -1289,9 +1291,11 @@ the date in your current timezone (as set in your operating system) at
 
 There are three types of timestamps:
 
-* _timestamp_: ordinary timestamp
-* _utc\_timestamp_:
-* _unix\_timestamp_: just a number of seconds since the UNIX epoch
+* _timestamp_: ordinary timestamp, microseconds since UNIX epoch,
+  including timezone epoch
+* _utc\_timestamp_: stored internally in the same way as _timestamp_,
+  just using _UTC_ as timezone
+* _unix\_timestamp_: a number of seconds since the UNIX epoch
   (1970-01-01).
 
 When comparing and converting dates and timestamps, spark assumes the
@@ -1307,17 +1311,17 @@ dateDF <- data.frame(string=c("9/21 1949 18:44:33", "5/3 2018 11:04:11")) %>%
 collect(dateDF)
 ```
 We start with the string representation (variable `string`) and
-convert  it into various other formats.
+convert  it into various other formats.  Unlike timestamps, strings
+are displayed unambiguosly independent of your timezone settings.
 
 
 ### From character representation
 
 In
 CSV files the
-date data is usually in some form of _yyyy-mm-dd_ form which will be
+date data is usually in some kind of _yyyy-mm-dd_ form which will be
 read as character string.  This can be converted to timestamps with
-`to_timestamp`.  However, this assumes the time is given in the
-current time zone (as set in your operating system):
+`to_timestamp`:
 ```{r, convertTime, cache=FALSE}
 dateDF2 <- dateDF %>%
    withColumn("date", to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss"))
@@ -1325,9 +1329,10 @@ collect(dateDF2)
 ```
 As you can see, the result printed in your current time zone,
 correspond exactly to the string representation: `to_timestamp`
-assumes the time is in your current time zone.
+puts the `date` column in your current time zone.  Sometimes this is not
+what you want.
 
-If the original time is not given in your current time zone, you can
+If the string that represents time is not given in your current time zone, you can
 add the time zone descriptor by [`concat`](#concat) to the string.
 For instance, if the original time was given in Kabul time (UTC+4:30),
 you can add the tz descriptor "+04:30" (note the leading "0") while
@@ -1341,23 +1346,50 @@ dateDF %>%
    collect()
 ```
 Now the date-column is different from the string representation
-(unless your OS is set to the Afghan tz).
+(unless your OS is set to the Kabul tz).  In this example, the
+text is complied in `r Sys.timezone()` time zone.
+`to_timestamp` and time zone formatting have their quirks:
+
+* TZ format "XXX" assume you supply the TZ information as "+dd:dd" or
+  "-dd:dd", so in this example it must be "+04:00".  "+4:00" will
+  result in NA-s.
 
 The fact that time output is always converted to your local time zone
-may feel confusing and make code incoherent between different time
-zones.  In this case one should choose to keep time in _utc\_timestamp_:
+when printed
+may feel confusing and make the same code to produce different results
+in different time
+zones.
+
+One may also keep time in _utc\_timestamp_:
 ```{r, keepUTC}
-dateUTC <- dateDF %>%
+dateDF %>%
    mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
    mutate(dateUTC = to_utc_timestamp(column("date"), "Asia/Kabul")) %>%
    collect()
-dateUTC
 ```
-This converts the string date into an UTC timestamp, assuming the
-original data was given in the Afghanistan time.  From the R point of
-view, the _utc\_timestamp_ is just a _POSIXct_ object, exactly as
-_timestamp_ objects with no additional attributes, even not `tzone` set.
+This converts the string date into an UTC timestamp.  The result is
+somewhat hard to interpret.  If we were working in UTC,
+instead of `r Sys.timezone()`, `dateUTC` would correspond to time in
+the local time zone for `date` in Kabul.  But as we are working in `r
+Sys.timezone()`, this means that whatever time in UTC corresponds to
+our `date`, that time would correspond to our `dateUTC` if given not
+in UTC but in Kabul.
+`to_utc_timestamp` has it's own issues:
 
+* if the supplied time zone is not recognized by the operating system,
+  it is silently ignored.
+
+From R point of
+view, the _utc\_timestamp_ is just another _POSIXct_ object, exactly as
+_timestamp_.  This can easily be seen by comparing dates:
+```{r, compareUTC}
+dateDF %>%
+   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), "Asia/Kabul")) %>%
+   filter(column("dateUTC") == column("date")) %>%
+   collect()
+```
+These timestamps are not equal, in fact _dateUTC_ is less than _date_.
 
 
 ### Formatting dates back to characters {#formatting-dates-back-to-characters}
@@ -1539,19 +1571,43 @@ dateDF2 %>%
    withColumn("hour", hour(column("date"))) %>%
    collect()
 ```
-Note: hour is extracted from the timestamp after converting it into
-the current time zone.  Use date in _utc\_timestamp_ if you want the hour in UTC.
-
-```{r, hour2}
-dateDF2 %>%
-   mutate(dateUTC = to_utc_timestamp(column("date"), "US/Pacific")) %>%
-   mutate(hour = hour(column("dateUTC"))) %>%
+Note: hour is extracted from the timestamp in the current time zone.
+If we are interested in hour in another TZ, we have to a) convert the
+timestamp to UTC timestamp with the current TZ, and b) convert it back
+to timestamp using the desired TZ.  For instance, assume our `string`
+date is given in Kabul time, and converted to timestamp with TZ
+information as above:
+```{r kabulHr}
+dateDF1 <- dateDF %>%
+   withColumn("date",
+              to_timestamp(concat(column("string"), lit("+04:30")),
+                           "MM/dd yyyy HH:mm:ssXXX"))
+dateDF1 %>%
    collect()
 ```
+If we just use `hour` function, this would result in hour in the
+current timezone:
+```{r currentHr}
+dateDF1 %>%
+   withColumn("hour", hour(column("date"))) %>%
+   collect()
+```
+If we are interested in the hour in Kabul, we have to go through
+double conversion:
+
+```{r hour2}
+dateDF1 %>%
+   withColumn("hour", column("date") %>%
+                      to_utc_timestamp(Sys.timezone()) %>%
+                      from_utc_timestamp("Asia/Kabul") %>%
+                      hour()) %>%
+   collect()
+```
+The result corresponds to the hour in our original string
+representation of the timestamp.
 
 
-
-# other notes (draft)
+# Other notes (draft)
 
 ## Web Monitoring Ports
 
