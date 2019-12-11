@@ -88,6 +88,9 @@ want to use both _dplyr_ and _SparkR_, load _dplyr_ before you load
 _SparkR_. 
 
 Besides select, the common functions include `mutate` and `rename`.
+There are also a plethora of other packages that export identically
+named functions, e.g. `hour` in _lubridate_ overrides the same
+function in _SparkR_.
 
 
 
@@ -710,12 +713,12 @@ merge(foo, bar, by="a") %>% collect()
 ```
 If, instead of `by`, you specify both `by.x` and `by.y`, then it also
 renames the `b`-s:
-```{r mergeRenames2, dependson="mergeRenames"}
+```{r mergeRenames2}
 merge(foo, bar, by.x="a", by.y="a") %>% collect()
 ```
 
 Join, in turn, does not rename but still keeps both version of the join column in the data:
-```{r joinDoesntRename, dependson="mergeRenames"}
+```{r joinDoesntRename}
 join(foo, bar, foo$a == bar$a) %>% collect()
 ```
 
@@ -1480,37 +1483,39 @@ _Date_ object.  So the result depends on your timezone settings!
 
 ### Converting data
 
-#### `to_utc_timestamp`
+#### `to_utc_timestamp` and `from_utc_timestamp`
 
 `to_utc_timestamp(y, x)` convert column _y_ into _utc\_timestamp_ in
-time zone `x`.  `x` must be provided as text (like _US/Pacific_),
-numeric form (as _-08:00_) does not work.
+time zone `x`.
 
+* `y`: column.  Columns of type _timestamp_ are supported.  It can be
+  interpreted as time in UTC.
+* `x`: string, time zone.  A time zone the system understands.
+  Unknown time zones are silently ignored.  It must be provided as text (like _US/Pacific_),
+  numeric form (as _-08:00_) does not work.
+
+For instance, if `date` is given in _`r Sys.timezone()`_ TZ, the conversion
+might look like
 ```{r, to_utc_timestampExample}
 dateDF2 %>%
-   mutate(dateUTC = to_utc_timestamp(column("date"), "US/Pacific")) %>%
+   mutate(dateUTC = to_utc_timestamp(column("date"), Sys.timezone())) %>%
    collect()
 ```
-Seems like _utc\_timestamp_ is not converted to the local time zone
-when collecting/printing.
-_UTC_ is ahead of _US/Pacific_ by 8 hours in september and 7 hours in
-early March.
+The `dateUTC` column shows time in UTC when the local time in 
+`r Sys.timezone()` is `date`.
 
+The opposite conversion can be done with `from_utc_timestamp(y, x)`
+which converts UTC time in _y_ into timestamp in time zone _x_.
 
-#### Date as _utc\_timestamp_ into a given time zone: `from_utc_timestamp`
-
-`from_utc_timestamp(y, x)`: converts _y_ into timestamp in time zone _x_
-
-* `y`: column.  Columns of type _utc\_timestamp_ are supported.
-* `x`: string, time zone.  A time zone the system understands.
-
-Example:
+For example, if `date` is in UTC then to convert this time into Shanghai
+time, we can do
 ```{r from_utc_timestamp}
 dateDF2 %>%
    withColumn("shanghaitime", from_utc_timestamp(column("date"), "Asia/Shanghai")) %>%
    collect()
 ```
 Indeed, Shanghai time is 8 hours ahead of UTC.
+
 
 
 #### Get date from timestamp or string: `to_date`
