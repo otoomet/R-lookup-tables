@@ -1399,11 +1399,14 @@ From R point of
 view, the _utc\_timestamp_ is just another _POSIXct_ object, exactly as
 _timestamp_.
 
-### Formatting dates back to characters {#formatting-dates-back-to-characters}
+### Converting dates to characters {#formatting-dates-back-to-characters}
 
-When we want to convert a _utc\_timestamp_ back to string representation in UTC, we
+When we want to convert a _timestamp_ to a string, we
 can use `date_format(column, format string)` (note: we need 
-[java format symbols](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html) again).
+[java format
+symbols](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)
+again).  The sring representation will use the current TZ as set by
+the operating system.
 For instance:
 ```{r dateFormatExample1, dependson="dateConvertExample1"}
 dateDF2 %>%
