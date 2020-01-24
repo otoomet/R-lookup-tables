@@ -1,0 +1,400 @@
+---
+title: "Speed of R Matrix Operations"
+subtitle: "Comparing Different Matrices"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    code_folding: hide
+---
+
+# Introduction
+
+Base R has only one type of matrices/vectors, but the _Matrix_ package
+implements a variety of sparse, symmetric, and special matrices.  How
+much efficiency gain do we get out of those?
+
+The tests are done on an
+`r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'",
+intern=TRUE)` using R `r paste0(R.Version()$major, ".",
+R.Version()$minor)` and Matrix package `r packageVersion("Matrix")`.
+
+```{r setup, include=FALSE}
+options(width=95)
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                     message=FALSE, error=TRUE,
+                     cache=TRUE, cache.path=".cache-matrices/",
+                     engine.path = list(python = "/usr/bin/python3")
+                     )
+library(Matrix)
+library(magrittr) # 'cause I love pipes
+library(microbenchmark) # to avoid delay when using the first time
+library(data.table)
+library(ggplot2)
+```
+
+We use _microbenchmark_ library.  Our main interest is to compare the
+matrix implementations, hence we run most tests with `OMP_NUM_THREADS`
+set to 1.  We run the test initially for small matrices and afterwards for
+large matrices.
+
+
+# Matrix-matrix multiplication
+
+The first task is to multiply two matrices, and compare the speed
+depending on the types of the factors.
+
+We test the following matrices:
+
+1. Base R matrices.
+2. _Matrix_-package's general dense matrices, _dgeMatrices_
+3. _Matrix_-package's general sparse matrices, _dgCMatrices_
+4. _Matrix_-package's compressed sparse row-oriented matrices, _dgRMatrices_
+
+```{r createMatrices}
+createMatrices <- function(N, M) {
+   ## N rows, M columns
+   N <- as.integer(N)
+   M <- as.integer(M)
+   ## base R matrices
+   A <- matrix(runif(N*M), N, M)
+   B <- matrix(runif(N*M), N, M)
+   ## Matrix dense matrices
+   denseA <- as(A, "Matrix")
+   denseB <- as(B, "Matrix")
+   ## Matrix sparse matrices
+   n <- ceiling(sqrt(N*M)) %>%
+      as.integer()
+                           # number of non-zero entries
+
+   i <- sample(N, n, replace=TRUE)
+   j <- sample(M, n, replace=TRUE)
+   sparseA <- sparseMatrix(i, j, x=runif(n), dims=c(N,M))
+   sparseB <- sparseMatrix(i, j, x=runif(n), dims=c(N,M))
+   ## dgRMatrix: have to construct from pointers
+   x <- runif(n)
+   id <- duplicated(cbind(i, j))
+   i <- i[!id]
+   j <- j[!id]
+   x <- x[!id]
+   j1 <- j[order(i, j)]
+   i1 <- i[order(i, j)]
+   x1 <- x[order(i, j)]
+   s <- table(factor(i1, levels=1:N, exclude=NULL))
+   p <- as.integer(c(0, cumsum(s)))
+   srA <- new("dgRMatrix", j=j1-1L, p=p, x=as.double(x), Dim=c(N, M))
+   srB <- new("dgRMatrix", j=j1-1L, p=p, x=runif(length(i1)), Dim=c(N, M))
+   list(A=A, B=B, denseA=denseA, denseB=denseB, sparseA=sparseA, sparseB=sparseB,
+        srA=srA, srB=srB)
+}
+n <- 100
+N <- 10000
+m <- 10
+M <- 1000
+smallMatrices <- createMatrices(n, m)
+largeMatrices <- createMatrices(N, M)
+```
+Hence we have the following small matrices:
+```{r smallClasses, dependson="createMatrices"}
+classes <- with(smallMatrices,
+                data.frame(matrix=c("A", "B", "denseA", "denseB",
+                                    "sparseA", "sparseB",
+                                    "srA", "srB"),
+                           class=sapply(smallMatrices, class),
+                           rows=sapply(smallMatrices, nrow),
+                           cols=sapply(smallMatrices, ncol),
+                           memory=sapply(smallMatrices
+                                        ,
+                                         function(o) gdata::humanReadable(object.size(o)))
+                           )
+     )
+knitr::kable(classes)
+```
+Not surprisingly, sparse matrices take less space than the dense
+ones.  However, and as a surprise, row-oriented _dgRMatrices_ are not
+just copies of column-oriented _dgCMatrices_ but less memory
+efficient.  It is not clear why should memory requirements for these
+two storage modes differ.
+
+The same table for the large matrices (10000 more entries):
+```{r largeClasses, dependson="createMatrices"}
+classes <- with(largeMatrices,
+                data.frame(matrix=c("A", "B", "denseA", "denseB",
+                                    "sparseA", "sparseB",
+                                    "srA", "srB"),
+                           class=sapply(largeMatrices, class),
+                           rows=sapply(largeMatrices, nrow),
+                           cols=sapply(largeMatrices, ncol),
+                           memory=sapply(largeMatrices,
+                                         function(o) gdata::humanReadable(object.size(o)))
+                           )
+     )
+knitr::kable(classes)
+```
+We can see that the storage requirements for base R and _dgeMatrices_
+are equal but sparse matrices take less than 0.1% of the storage.  As
+above, row-oriented _dgRMatrices_ take more memory than the
+column-oriented _dgCMatrices_.
+
+
+## Row/column extraction and transpose
+
+### Standard indexing with []
+
+First, let's see how fast are different matrix implementations with
+indexing.  We do just simple row/column extractions, sometimes as
+transposed, and measure such simple indexing speed.  We focus on the
+median time.  Small matrices:
+```{r smallRows, dependson="createMatrices"}
+i <- n %/% 2
+j <- m %% 2
+with(smallMatrices,
+     microbenchmark(A[i,], A[,j], t(A[i,]), t(A[,j]),
+                    denseA[i,], denseA[,j], t(denseA[i,]), t(denseA[,j]),
+                    sparseA[i,], sparseA[,j], t(sparseA[i,]), t(sparseA[,j]),
+                    srA[i,], srA[,j], t(srA[i,]), t(srA[,j]), 
+                    times=100
+                    ) %>%
+     print()
+     )
+```
+The table reveals that the base-R matrices are by far the fastest
+objects for row and column extraction.  The general sparse matrices,
+_dgCMatrices_ are next with approximately 40× slower speed.  But the
+slowest objects in this list are their close relatives, row-based _dgRMatrices_,
+roughly 3× slower than the column-based _dgCMatrices_.  This is
+surprising as according to documentation these are very similar
+objects.  Transposition clearly takes time, for base-R matrices it
+adds 6μs, and for the slower types the penalty is more like 50μs.
+
+Now repeat the exercise for large matrices:
+```{r largeRows, dependson="createMatrices"}
+i <- N %/% 2
+j <- M %% 2
+with(largeMatrices,
+     microbenchmark(A[i,], A[,j], t(A[i,]), t(A[,j]),
+                    denseA[i,], denseA[,j], t(denseA[i,]), t(denseA[,j]),
+                    sparseA[i,], sparseA[,j], t(sparseA[i,]), t(sparseA[,j]),
+                    srA[i,], srA[,j], t(srA[i,]), t(srA[,j]), 
+                    times=100
+                    ) %>%
+     print()
+     )
+```
+As above, the clear winner is the base-R matrix with the median
+extraction time being approximately 10μs (column extraction) and 50μs
+(row extraction).  The fact that column extraction is noticeably
+faster may be related to the column-major storage mode, note that as
+the matrix contains substantially more rows 
+(`r nrow(largeMatrices$A)`) than columns (`r ncol(largeMatrices$A)`), we
+would expect the column vector being longer and slower.
+
+The most striking difference is the terribly slow indexing of
+_dgeMatrices_, 3 orders of magnitude slower than the base-R matrix
+indexing!  This is a big potential problem when using those matrices
+in applications. 
+
+Otherwise, we can see that extracting base R matrix columns is
+approximately 5 times faster than extracting it's rows, an obvious
+result of column-major storage.
+
+Finally, extracting rows and columns from _dgCMatrices_ sparse matrices is perhaps 5 times
+slower than from base R matrices.
+
+
+### Custom indexing
+
+If the basic indexing is implemented inefficiently, we may gain by
+extracting the data directly from the array in memory (see [Ben
+Bolker's suggestion at
+SO](https://stackoverflow.com/questions/47997184/extraction-speed-in-matrix-package-is-very-slow-compared-to-regular-matrix-class)). 
+We create row and column extractors as
+```{r extractors}
+
+rowVec <- function(M, i) {
+   v <- numeric(ncol(M))
+   inds <- seq(M@p[i]+1,M@p[i+1])  ## find indices
+   v[M@j[inds]+1] <- M@x[inds]     ## set values
+   v
+}
+
+```
+
+## Matrix multiplication
+
+Next, we test the basic multiplication speed (no cross-product) 
+of all these matrices.  To my
+surprise, product of _dgRMatrices_ is not even implemented by Matrix
+package.
+
+Small matrices:
+
+```{r smallMult, dependson="createMatrices"}
+Sys.setenv(OMP_NUM_THREADS=1)
+with(smallMatrices,
+     microbenchmark(t(A) %*% B,
+                    t(denseA) %*% denseB,
+                    t(denseA) %*% B,
+                    t(sparseA) %*% sparseB,
+                    t(sparseA) %*% denseB,
+                    t(sparseA) %*% B,
+                    # t(srA) %*% srB,
+                    times=10) %>%
+     print()
+     )
+```
+and for large matrices:
+```{r largeMult, dependson="createMatrices"}
+with(largeMatrices,
+     microbenchmark(t(A) %*% B,
+                    t(denseA) %*% denseB,
+                    t(denseA) %*% B,
+                    t(sparseA) %*% sparseB,
+                    t(sparseA) %*% denseB,
+                    t(sparseA) %*% B,
+                    # t(srA) %*% srB,
+                    times=10) %>%
+     print()
+     )
+```
+
+The table revelas that the dense _dgeMatrix_ class objects are
+noticeably slower, approximately 10% at the median.  Multiplying a
+_dgeMatrix_ with a base R matrix is almost 30% slower.  As expected,
+_dgCMatrix_ sparse matrices are much faster.  This is not surprising
+as unlike the dense matrices, the `r N`×`r M` sparse matrix only
+contains `r sum(largeMatrices$sparseA != 0)` non-zero objects.
+But again, _dgCMatrix_
+multiplied by base R matrix is the slowest examples here.
+
+
+
+
+
+
+
+## Parallelism
+
+We only test 2 and 4-fold parallelism (as the CPU has 4 cores).  As
+the built-in loops are virtually equal, we only benchmark the parallel
+versions with for-loop below.
+
+### 2-fold
+
+```{r smallP2, dependson=c("task", "loops")}
+P <- 2
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R),
+               doLoop(R), mclapplyLoop(R), doparLoop(R),
+               control=list(warmup=10))
+```
+
+### 4-fold
+
+```{r smallP4, dependson=c("task", "loops")}
+P <- 4
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R),
+               doLoop(R), mclapplyLoop(R), doparLoop(R),
+               control=list(warmup=10))
+```
+
+Handling more than one worker makes the parallel routines noticeably
+slower&mdash; these tasks are too small to actually benefit from
+parallel execution.
+`mclapply` runs at roughly 50% of the speed of `for`, the
+difference between `%do%` and `%dopar%` is more like 10%.  Spawning 4
+workers causes some additional overhead compared
+to the 2-worker case, 20% in case of `mclapply` and 3% for `%dopar%`. 
+
+
+# Small number of large tasks: _N = 500_ and _R=100_
+
+Next, we run a similar small number of large tasks (_N=500_).  
+
+## No parallelism
+
+```{r large, dependson=c("task", "loops")}
+N <- 400
+R <- 100
+P <- 1
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), whileLoop(R),
+               lapplyLoop(R), doLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+As you can see, when execution time reaches to seconds, all the loops
+run at virtually the same speed.  This is to be expected as the
+overhead is negligible next to the task of inverting `r N`x`r N` matrices.
+
+## Parallelism
+
+As all the contenders perform similarly here, we only compare the
+for-loop as the benchmark with two parallelized loops: `mclapply` and
+`%dopar%`
+
+### 2-fold parallelism
+
+```{r largeP2, dependson=c("task", "loops")}
+N <- 400
+R <- 100
+P <- 2
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+### 4-fold parallelism
+
+```{r largeP4, dependson=c("task", "loops")}
+N <- 400
+R <- 100
+P <- 4
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+The parallel results indicate that we get a close to linear increase in
+speed by adding the workers&mdash;at least this is true till the _P
+= 4_, the number of CPU cores.  `mclapply` and `%dopar%` perform
+identically well here.
+
+
+# The middle case: `lapply` or `foreach`?
+
+We saw that for small tasks, both `foreach` and parallelism have
+noticeable overheads.  But is there a task size where it pays off to
+use `mclapply` but not `%dopar%` for parallelization?  We try a
+medium-sized task (_N = 100_) with two workers, again using the for-loop as the
+benchmark: 
+
+```{r medium, dependson=c("task", "loops")}
+N <- 100
+R <- 100
+P <- 2
+registerDoParallel(cores=P)
+microbenchmark(forLoop(R), mclapplyLoop(R), doparLoop(R),
+               times=4, control=list(warmup=1))
+```
+
+Indeed, for this task size we find that `mclapply` is noticeably
+faster than both of the other loops in the table.  The opportunity
+window for `mclapply` is relatively narrow though, further testing
+indicates that it's advantage is there for _N_ values of roughly
+
+
+
+# Conclusion
+
+The base-R matrices appear to be by far the fastest implementations
+tested so far.  The matrix-package general dense matrices,
+_dgeMatrices_, are much slower, but the column-oriented sparse class,
+_dgCMatrices_ is much faster far large matrices.  These tests suggest
+that the boundary between small and big lies around thousands of
+rows.  This, however, also depends on the sparseness.
