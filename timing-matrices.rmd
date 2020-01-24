@@ -214,15 +214,50 @@ Bolker's suggestion at
 SO](https://stackoverflow.com/questions/47997184/extraction-speed-in-matrix-package-is-very-slow-compared-to-regular-matrix-class)). 
 We create row and column extractors as
 ```{r extractors}
-
 rowVec <- function(M, i) {
    v <- numeric(ncol(M))
-   inds <- seq(M@p[i]+1,M@p[i+1])  ## find indices
+   inds <- seq(from=M@p[i]+1, to=M@p[i+1], length.out=max(0, M@p[i+1] - M@p[i]))
+                           # find indices
    v[M@j[inds]+1] <- M@x[inds]     ## set values
    v
 }
-
 ```
+and measure it's speed compared to base-R and Matrix small matrices:
+```{r smallCustomExtract, dependson="extractors"}
+i <- n %/% 2
+j <- m %% 2
+with(smallMatrices,
+     microbenchmark(A[i,], 
+                    sparseA[i,],
+                    srA[i,], rowVec(srA, i),
+                    times=100
+                    ) %>%
+     print()
+     )
+```
+Indeed, the custom function works much better than the standard sparse
+matrix
+indexing (over 3× faster) but it is still 15× slower than the base-R
+matrices. 
+
+The results for large matrices are the following:
+```{r largeCustomExtract, dependson="extractors"}
+i <- N %/% 2
+j <- M %% 2
+with(largeMatrices,
+     microbenchmark(A[i,], 
+                    sparseA[i,],
+                    srA[i,], rowVec(srA, i),
+                    times=100
+                    ) %>%
+     print()
+     )
+```
+The custom row vector extractor is now just twice as slow than the
+base-R indexing.  And the standard row extraction from standard
+column-oriented sparse matrices is still 5× slower than the custom
+extractor. 
+
 
 ## Matrix multiplication
 
