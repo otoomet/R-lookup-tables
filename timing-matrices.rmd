@@ -215,10 +215,18 @@ SO](https://stackoverflow.com/questions/47997184/extraction-speed-in-matrix-pack
 We create row and column extractors as
 ```{r extractors}
 rowVec <- function(M, i) {
-   v <- numeric(ncol(M))
+   v <- numeric(M@Dim[2])
    inds <- seq(from=M@p[i]+1, to=M@p[i+1], length.out=max(0, M@p[i+1] - M@p[i]))
                            # find indices
    v[M@j[inds]+1] <- M@x[inds]     ## set values
+   v
+}
+colVec <- function(M, j) {
+   r <- which(M@j == j-1)
+   x <- M@x[r]
+   i <- rep(seq(length=M@Dim[1]), diff(M@p))[r]
+   v <- numeric(M@Dim[1])
+   v[i] <- x
    v
 }
 ```
@@ -227,9 +235,10 @@ and measure it's speed compared to base-R and Matrix small matrices:
 i <- n %/% 2
 j <- m %% 2
 with(smallMatrices,
-     microbenchmark(A[i,], 
-                    sparseA[i,],
-                    srA[i,], rowVec(srA, i),
+     microbenchmark(A[i,], A[,j],
+                    sparseA[i,], sparseA[,j],
+                    srA[i,], srA[,j],
+                    rowVec(srA, i), colVec(srA, j),
                     times=100
                     ) %>%
      print()
@@ -245,9 +254,10 @@ The results for large matrices are the following:
 i <- N %/% 2
 j <- M %% 2
 with(largeMatrices,
-     microbenchmark(A[i,], 
-                    sparseA[i,],
-                    srA[i,], rowVec(srA, i),
+     microbenchmark(A[i,], A[,j],
+                    sparseA[i,], sparseA[,j],
+                    srA[i,], srA[,j],
+                    rowVec(srA, i), colVec(srA, j),
                     times=100
                     ) %>%
      print()
@@ -311,8 +321,6 @@ multiplied by base R matrix is the slowest examples here.
 
 
 
-
-## Parallelism
 
 We only test 2 and 4-fold parallelism (as the CPU has 4 cores).  As
 the built-in loops are virtually equal, we only benchmark the parallel
