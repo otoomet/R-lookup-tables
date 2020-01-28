@@ -47,21 +47,19 @@ set to 1.  We run the test initially for small matrices and afterwards for
 large matrices.
 
 
-# Matrix-matrix multiplication
+# Different types of matrices
 
-The first task is to multiply two matrices, and compare the speed
-depending on the types of the factors.
-
-We test the following matrices:
+We create the following matrices:
 
 1. Base R matrices.
 2. _Matrix_-package's general dense matrices, _dgeMatrices_
 3. _Matrix_-package's general sparse matrices, _dgCMatrices_
 4. _Matrix_-package's compressed sparse row-oriented matrices,
    _dgRMatrices_
+5. _Matrix_-pacakges's indicator matrices, _indMatrices_
 5. _SparseM_-package's compressed row matrix _matrix.csr_
 
-```{r createMatrices}
+```{r createMatrices, error=FALSE}
 createMatrices <- function(N, M) {
    ## N rows, M columns
    N <- as.integer(N)
@@ -95,8 +93,12 @@ createMatrices <- function(N, M) {
    p <- as.integer(c(0, cumsum(s)))
    srA <- new("dgRMatrix", j=j1-1L, p=p, x=as.double(x1), Dim=c(N, M))
    srB <- new("dgRMatrix", j=j1-1L, p=p, x=runif(length(i1)), Dim=c(N, M))
-
+   ## indMatrix
+   i <- sample(M, N, replace=TRUE)
+   indA <- new("indMatrix", perm=i, Dim=c(N, M))
    ## SparseM csr matrix: construct from pointers
+   i <- sample(N, n, replace=TRUE)
+   j <- sample(M, n, replace=TRUE)
    x <- runif(n)
    id <- duplicated(cbind(i, j))
    i <- i[!id]
@@ -114,6 +116,7 @@ createMatrices <- function(N, M) {
    
    list(A=A, B=B, denseA=denseA, denseB=denseB, sparseA=sparseA, sparseB=sparseB,
         srA=srA, srB=srB,
+        indA=indA,
         csrA=csrA, csrB=csrB)
 }
 n <- 100
@@ -128,6 +131,7 @@ Hence we have the following small matrices:
 classes <- data.frame(matrix=c("A", "B", "denseA", "denseB",
                                "sparseA", "sparseB",
                                "srA", "srB",
+                               "indA",
                                "csrA", "csrB"),
                       class=sapply(smallMatrices, class),
                       rows=sapply(smallMatrices, nrow),
@@ -155,6 +159,7 @@ The same table for the large matrices (10000 more entries):
 classes <- data.frame(matrix=c("A", "B", "denseA", "denseB",
                                "sparseA", "sparseB",
                                "srA", "srB",
+                               "indA",
                                "csrA", "csrB"),
                       class=sapply(largeMatrices, class),
                       rows=sapply(largeMatrices, nrow),
@@ -191,8 +196,9 @@ with(smallMatrices,
      microbenchmark(A[i,], A[,j], t(A[i,]), t(A[,j]),
                     denseA[i,], denseA[,j], t(denseA[i,]), t(denseA[,j]),
                     sparseA[i,], sparseA[,j], t(sparseA[i,]), t(sparseA[,j]),
-                    srA[i,], srA[,j], t(srA[i,]), t(srA[,j]), 
-                    csrA[i,], csrA[,j], t(csrA[i,]), t(csrA[,j]), 
+                    srA[i,], srA[,j],
+                    indA[i,],
+                    csrA[i,], csrA[,j],
                     times=100
                     ) %>%
      print()
@@ -216,8 +222,9 @@ with(largeMatrices,
      microbenchmark(A[i,], A[,j], t(A[i,]), t(A[,j]),
                     denseA[i,], denseA[,j], t(denseA[i,]), t(denseA[,j]),
                     sparseA[i,], sparseA[,j], t(sparseA[i,]), t(sparseA[,j]),
-                    srA[i,], srA[,j], t(srA[i,]), t(srA[,j]), 
-                    csrA[i,], csrA[,j], t(csrA[i,]), t(csrA[,j]), 
+                    srA[i,], srA[,j],
+                    indA[i,],
+                    csrA[i,], csrA[,j],
                     times=100
                     ) %>%
      print()
@@ -241,8 +248,11 @@ Otherwise, we can see that extracting base R matrix columns is
 approximately 5 times faster than extracting it's rows, an obvious
 result of column-major storage.
 
-Finally, extracting rows and columns from _dgCMatrices_ sparse matrices is perhaps 5 times
-slower than from base R matrices.  Unfortunately, SparseM-s
+Extracting rows and columns from _dgCMatrices_ sparse matrices is perhaps 5 times
+slower than from base R matrices.  But the indicator _indMatrices_ are
+noticeably faster with speed approaching that of the base-R matrices.
+
+Unfortunately, SparseM-s
 _matrix.csr_ offers no respite here, these objects are much slower
 than Matrix's matrices.
 
@@ -274,7 +284,7 @@ colVec <- function(M, j) {
 and measure it's speed compared to base-R and Matrix small matrices:
 ```{r smallCustomExtract, dependson="extractors"}
 i <- n %/% 2
-j <- m %% 2
+j <- m %/% 2
 with(smallMatrices,
      microbenchmark(A[i,], A[,j],
                     sparseA[i,], sparseA[,j],
@@ -293,7 +303,7 @@ matrices.
 The results for large matrices are the following:
 ```{r largeCustomExtract, dependson="extractors"}
 i <- N %/% 2
-j <- M %% 2
+j <- M %/% 2
 with(largeMatrices,
      microbenchmark(A[i,], A[,j],
                     sparseA[i,], sparseA[,j],
@@ -312,7 +322,7 @@ than the standard sparse column extractor, is still way too slow.
 
 
 
-## Matrix multiplication
+## Matrix-matrix multiplication
 
 Next, we test the basic multiplication speed (no cross-product) 
 of all these matrices.  To my
@@ -330,7 +340,9 @@ with(smallMatrices,
                     t(sparseA) %*% sparseB,
                     t(sparseA) %*% denseB,
                     t(sparseA) %*% B,
-                    # t(srA) %*% srB, -- not implemented
+                           # t(srA) %*% srB, -- not implemented
+                    t(indA) %*% B,
+                    t(indA) %*% denseB,
                     t(csrA) %*% csrB,
                     times=10) %>%
      print()
@@ -346,6 +358,8 @@ with(largeMatrices,
                     t(sparseA) %*% denseB,
                     t(sparseA) %*% B,
                     # t(srA) %*% srB, --not implemented
+                    t(indA) %*% B,
+                    t(indA) %*% denseB,
                     t(csrA) %*% csrB,
                     times=10) %>%
      print()
@@ -362,34 +376,79 @@ But again, _dgCMatrix_
 multiplied by base R matrix is the slowest examples here.
 
 
+## Matrix-vector multiplication
 
+Now we test vector-matrix product speed that includes indexing: we
+pull out a single row from the first matrix, transpose it, and
+multiply be the second matrix.
 
+Small matrices:
 
-
-
-
-
-
-```{r smallP4, dependson=c("task", "loops")}
-P <- 4
-registerDoParallel(cores=P)
-microbenchmark(forLoop(R),
-               doLoop(R), mclapplyLoop(R), doparLoop(R),
-               control=list(warmup=10))
+```{r smallMultVector, dependson="createMatrices"}
+Sys.setenv(OMP_NUM_THREADS=1)
+i <- n %/% 2
+j <- m %/% 2
+with(smallMatrices,
+     microbenchmark(t(A[i,]) %*% t(B),
+                    t(B %*% A[i,]),
+                    t(denseA[i,]) %*% t(denseB),
+                    t(denseB %*% denseA[i,]),
+                    t(denseA[i,]) %*% t(B),
+                    t(B %*% denseA[i,]),
+                    t(sparseA[i,]) %*% t(sparseB),
+                    t(sparseB %*% sparseA[i,]),
+                    t(sparseA[i,]) %*% t(denseB),
+                    t(denseB %*% sparseA[i,]),
+                    t(sparseA[i,]) %*% t(B),
+                    t(B %*% sparseA[i,]),
+                    t(indA[i,]) %*% t(B),
+                    t(B %*% indA[i,]),
+                    t(indA[i,]) %*% t(denseB),
+                    t(denseB %*% indA[i,]),
+                    csrA[i,] %*% t(csrB),
+                    csrB %*% t(csrA[i,]),
+                    times=20) %>%
+     print()
+     )
+```
+and for large matrices:
+```{r largeMultVector, dependson="createMatrices"}
+i <- N %/% 2
+j <- M %/% 2
+with(largeMatrices,
+     microbenchmark(t(A[i,]) %*% t(B),
+                    t(B %*% A[i,]),
+                    t(denseA[i,]) %*% t(denseB),
+                    t(denseB %*% denseA[i,]),
+                    t(denseA[i,]) %*% t(B),
+                    t(B %*% denseA[i,]),
+                    t(sparseA[i,]) %*% t(sparseB),
+                    t(sparseB %*% sparseA[i,]),
+                    t(sparseA[i,]) %*% t(denseB),
+                    t(denseB %*% sparseA[i,]),
+                    t(sparseA[i,]) %*% t(B),
+                    t(B %*% sparseA[i,]),
+                    t(indA[i,]) %*% t(B),
+                    t(B %*% indA[i,]),
+                    t(indA[i,]) %*% t(denseB),
+                    t(denseB %*% indA[i,]),
+                    csrA[i,] %*% t(csrB),
+                    csrB %*% t(csrA[i,]),
+                    times=10) %>%
+     print()
+     )
 ```
 
-Handling more than one worker makes the parallel routines noticeably
-slower&mdash; these tasks are too small to actually benefit from
-parallel execution.
-`mclapply` runs at roughly 50% of the speed of `for`, the
-difference between `%do%` and `%dopar%` is more like 10%.  Spawning 4
-workers causes some additional overhead compared
-to the 2-worker case, 20% in case of `mclapply` and 3% for `%dopar%`. 
+The table shows that transposing the factors may impose quite a
+substantial speed penalty.  
 
 
-# Small number of large tasks: _N = 500_ and _R=100_
 
-Next, we run a similar small number of large tasks (_N=500_).  
+
+
+
+
+
 
 ## No parallelism
 
