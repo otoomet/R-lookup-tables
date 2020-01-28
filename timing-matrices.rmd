@@ -14,13 +14,16 @@ output:
 # Introduction
 
 Base R has only one type of matrices/vectors, but the _Matrix_ package
-implements a variety of sparse, symmetric, and special matrices.  How
+implements a variety of sparse, symmetric, and special matrices.  In
+addition, there is _SparseM_ package with it's own implementation of
+sparse matrices.  How
 much efficiency gain do we get out of those?
 
 The tests are done on an
 `r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'",
 intern=TRUE)` using R `r paste0(R.Version()$major, ".",
-R.Version()$minor)` and Matrix package `r packageVersion("Matrix")`.
+R.Version()$minor)`, Matrix package `r packageVersion("Matrix")` and
+SparseM version `r packageVersion("SparseM")`.
 
 ```{r setup, include=FALSE}
 options(width=95)
@@ -31,6 +34,7 @@ knitr::opts_chunk$set(fig.height=100/25.4,
                      engine.path = list(python = "/usr/bin/python3")
                      )
 library(Matrix)
+library(SparseM)
 library(magrittr) # 'cause I love pipes
 library(microbenchmark) # to avoid delay when using the first time
 library(data.table)
@@ -53,7 +57,9 @@ We test the following matrices:
 1. Base R matrices.
 2. _Matrix_-package's general dense matrices, _dgeMatrices_
 3. _Matrix_-package's general sparse matrices, _dgCMatrices_
-4. _Matrix_-package's compressed sparse row-oriented matrices, _dgRMatrices_
+4. _Matrix_-package's compressed sparse row-oriented matrices,
+   _dgRMatrices_
+5. _SparseM_-package's compressed row matrix _matrix.csr_
 
 ```{r createMatrices}
 createMatrices <- function(N, M) {
@@ -75,6 +81,7 @@ createMatrices <- function(N, M) {
    j <- sample(M, n, replace=TRUE)
    sparseA <- sparseMatrix(i, j, x=runif(n), dims=c(N,M))
    sparseB <- sparseMatrix(i, j, x=runif(n), dims=c(N,M))
+
    ## dgRMatrix: have to construct from pointers
    x <- runif(n)
    id <- duplicated(cbind(i, j))
@@ -86,10 +93,28 @@ createMatrices <- function(N, M) {
    x1 <- x[order(i, j)]
    s <- table(factor(i1, levels=1:N, exclude=NULL))
    p <- as.integer(c(0, cumsum(s)))
-   srA <- new("dgRMatrix", j=j1-1L, p=p, x=as.double(x), Dim=c(N, M))
+   srA <- new("dgRMatrix", j=j1-1L, p=p, x=as.double(x1), Dim=c(N, M))
    srB <- new("dgRMatrix", j=j1-1L, p=p, x=runif(length(i1)), Dim=c(N, M))
+
+   ## SparseM csr matrix: construct from pointers
+   x <- runif(n)
+   id <- duplicated(cbind(i, j))
+   i <- i[!id]
+   j <- j[!id]
+   x <- x[!id]
+   j1 <- j[order(i, j)]
+   i1 <- i[order(i, j)]
+   x1 <- x[order(i, j)]
+   s <- table(factor(i1, levels=1:N, exclude=NULL))
+   p <- as.integer(cumsum(c(1, s)))
+   csrA <- new("matrix.csr", ra=as.double(x1),
+               ja=j1, ia=p, dimension=c(N, M))
+   csrB <- new("matrix.csr", ra=runif(length(i1)),
+               ja=j1, ia=p, dimension=c(N, M))
+   
    list(A=A, B=B, denseA=denseA, denseB=denseB, sparseA=sparseA, sparseB=sparseB,
-        srA=srA, srB=srB)
+        srA=srA, srB=srB,
+        csrA=csrA, csrB=csrB)
 }
 n <- 100
 N <- 10000
@@ -100,45 +125,55 @@ largeMatrices <- createMatrices(N, M)
 ```
 Hence we have the following small matrices:
 ```{r smallClasses, dependson="createMatrices"}
-classes <- with(smallMatrices,
-                data.frame(matrix=c("A", "B", "denseA", "denseB",
-                                    "sparseA", "sparseB",
-                                    "srA", "srB"),
-                           class=sapply(smallMatrices, class),
-                           rows=sapply(smallMatrices, nrow),
-                           cols=sapply(smallMatrices, ncol),
-                           memory=sapply(smallMatrices
-                                        ,
-                                         function(o) gdata::humanReadable(object.size(o)))
-                           )
-     )
+classes <- data.frame(matrix=c("A", "B", "denseA", "denseB",
+                               "sparseA", "sparseB",
+                               "srA", "srB",
+                               "csrA", "csrB"),
+                      class=sapply(smallMatrices, class),
+                      rows=sapply(smallMatrices, nrow),
+                      cols=sapply(smallMatrices, ncol),
+                      memory=sapply(smallMatrices,
+                                    function(o) gdata::humanReadable(object.size(o))),
+                      "row class"=sapply(smallMatrices,
+                                         function(o) class(o[1,])[1]),
+                      "col class"=sapply(smallMatrices,
+                                         function(o) class(o[,1])[1])
+                      )
 knitr::kable(classes)
 ```
 Not surprisingly, sparse matrices take less space than the dense
 ones.  However, and as a surprise, row-oriented _dgRMatrices_ are not
 just copies of column-oriented _dgCMatrices_ but less memory
 efficient.  It is not clear why should memory requirements for these
-two storage modes differ.
+two storage modes differ.  We can also see that SparseM's row-oriented
+_matrix.csr_ is of the
+same size as Matrix's column-oriented _dgCMatrix_, so apparently there
+are various small implementation differences between these objects.
 
 The same table for the large matrices (10000 more entries):
 ```{r largeClasses, dependson="createMatrices"}
-classes <- with(largeMatrices,
-                data.frame(matrix=c("A", "B", "denseA", "denseB",
-                                    "sparseA", "sparseB",
-                                    "srA", "srB"),
-                           class=sapply(largeMatrices, class),
-                           rows=sapply(largeMatrices, nrow),
-                           cols=sapply(largeMatrices, ncol),
-                           memory=sapply(largeMatrices,
-                                         function(o) gdata::humanReadable(object.size(o)))
-                           )
-     )
+classes <- data.frame(matrix=c("A", "B", "denseA", "denseB",
+                               "sparseA", "sparseB",
+                               "srA", "srB",
+                               "csrA", "csrB"),
+                      class=sapply(largeMatrices, class),
+                      rows=sapply(largeMatrices, nrow),
+                      cols=sapply(largeMatrices, ncol),
+                      memory=sapply(largeMatrices,
+                                    function(o) gdata::humanReadable(object.size(o))),
+                      "row class"=sapply(largeMatrices,
+                                         function(o) class(o[1,])[1]),
+                      "col class"=sapply(largeMatrices,
+                                         function(o) class(o[,1])[1])
+                      )
 knitr::kable(classes)
 ```
 We can see that the storage requirements for base R and _dgeMatrices_
 are equal but sparse matrices take less than 0.1% of the storage.  As
 above, row-oriented _dgRMatrices_ take more memory than the
-column-oriented _dgCMatrices_.
+column-oriented _dgCMatrices_.  Somewhat surprisingly, the rows and
+columns, extracted from sparse matrices, are still of class "numeric",
+i.e. they are dense rows and columns.
 
 
 ## Row/column extraction and transpose
@@ -151,17 +186,19 @@ transposed, and measure such simple indexing speed.  We focus on the
 median time.  Small matrices:
 ```{r smallRows, dependson="createMatrices"}
 i <- n %/% 2
-j <- m %% 2
+j <- m %/% 2
 with(smallMatrices,
      microbenchmark(A[i,], A[,j], t(A[i,]), t(A[,j]),
                     denseA[i,], denseA[,j], t(denseA[i,]), t(denseA[,j]),
                     sparseA[i,], sparseA[,j], t(sparseA[i,]), t(sparseA[,j]),
                     srA[i,], srA[,j], t(srA[i,]), t(srA[,j]), 
+                    csrA[i,], csrA[,j], t(csrA[i,]), t(csrA[,j]), 
                     times=100
                     ) %>%
      print()
      )
 ```
+(Extracted row `r i` and column `r j`).
 The table reveals that the base-R matrices are by far the fastest
 objects for row and column extraction.  The general sparse matrices,
 _dgCMatrices_ are next with approximately 40× slower speed.  But the
@@ -174,17 +211,19 @@ adds 6μs, and for the slower types the penalty is more like 50μs.
 Now repeat the exercise for large matrices:
 ```{r largeRows, dependson="createMatrices"}
 i <- N %/% 2
-j <- M %% 2
+j <- M %/% 2
 with(largeMatrices,
      microbenchmark(A[i,], A[,j], t(A[i,]), t(A[,j]),
                     denseA[i,], denseA[,j], t(denseA[i,]), t(denseA[,j]),
                     sparseA[i,], sparseA[,j], t(sparseA[i,]), t(sparseA[,j]),
                     srA[i,], srA[,j], t(srA[i,]), t(srA[,j]), 
+                    csrA[i,], csrA[,j], t(csrA[i,]), t(csrA[,j]), 
                     times=100
                     ) %>%
      print()
      )
 ```
+(Extracted row `r i` and column `r j`).
 As above, the clear winner is the base-R matrix with the median
 extraction time being approximately 10μs (column extraction) and 50μs
 (row extraction).  The fact that column extraction is noticeably
@@ -203,7 +242,9 @@ approximately 5 times faster than extracting it's rows, an obvious
 result of column-major storage.
 
 Finally, extracting rows and columns from _dgCMatrices_ sparse matrices is perhaps 5 times
-slower than from base R matrices.
+slower than from base R matrices.  Unfortunately, SparseM-s
+_matrix.csr_ offers no respite here, these objects are much slower
+than Matrix's matrices.
 
 
 ### Custom indexing
@@ -263,10 +304,12 @@ with(largeMatrices,
      print()
      )
 ```
-The custom row vector extractor is now just twice as slow than the
+The custom row vector extractor is now just little slower than the
 base-R indexing.  And the standard row extraction from standard
 column-oriented sparse matrices is still 5× slower than the custom
-extractor. 
+extractor.  However, the custom column extractor is, although faster
+than the standard sparse column extractor, is still way too slow.
+
 
 
 ## Matrix multiplication
@@ -287,7 +330,8 @@ with(smallMatrices,
                     t(sparseA) %*% sparseB,
                     t(sparseA) %*% denseB,
                     t(sparseA) %*% B,
-                    # t(srA) %*% srB,
+                    # t(srA) %*% srB, -- not implemented
+                    t(csrA) %*% csrB,
                     times=10) %>%
      print()
      )
@@ -301,7 +345,8 @@ with(largeMatrices,
                     t(sparseA) %*% sparseB,
                     t(sparseA) %*% denseB,
                     t(sparseA) %*% B,
-                    # t(srA) %*% srB,
+                    # t(srA) %*% srB, --not implemented
+                    t(csrA) %*% csrB,
                     times=10) %>%
      print()
      )
@@ -322,21 +367,8 @@ multiplied by base R matrix is the slowest examples here.
 
 
 
-We only test 2 and 4-fold parallelism (as the CPU has 4 cores).  As
-the built-in loops are virtually equal, we only benchmark the parallel
-versions with for-loop below.
 
-### 2-fold
 
-```{r smallP2, dependson=c("task", "loops")}
-P <- 2
-registerDoParallel(cores=P)
-microbenchmark(forLoop(R),
-               doLoop(R), mclapplyLoop(R), doparLoop(R),
-               control=list(warmup=10))
-```
-
-### 4-fold
 
 ```{r smallP4, dependson=c("task", "loops")}
 P <- 4
