@@ -23,7 +23,6 @@ knitr::opts_chunk$set(fig.height=100/25.4,
                       message=FALSE)
 library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
 library(magrittr)
-Sys.setenv(JAVA_HOME="/usr/lib/jvm/java-8-openjdk-amd64/")
 ss <- sparkR.session(master = "local[2]",
                      appName = "sparkr notes",
                      sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
@@ -257,6 +256,16 @@ ss <- sparkR.session(master = "local[2]",
                      )
 ```
 
+
+### SparkR and knitr
+
+Spark can easily be used with knitr and the corresponding chunks are
+basically just R code.  However, as spark objects are not R
+objects--they are pointers to the corresponding java objects--spark
+objects cannot be cached.  You have to re-run your objects again (or
+build your own cache).
+
+
 ## Configuration
 
 ### Getting Run-Time Configuration
@@ -268,7 +277,9 @@ sparkR.conf()
 ```
 Note that there is no obvious entry for parallelism.  When invoked
 locally, it is visible as the entry of `spark.master`, here
-"local[2]", but no dedicated number is provided (2.3, 2.4).
+"local[2]", but no dedicated number is provided (2.3, 2.4).  Neither
+can you see an entry for spark version, although the `spark.home`
+directory name contains the version number in this installation.
 
 
 ### Temporary Directories
@@ -290,7 +301,7 @@ full, spark fails even if there is still plenty of space on the
 other (2.1.2).
 
 
-# Data input
+# Data input and output
 
 ## From R to spark and back
 
@@ -362,9 +373,13 @@ by the default arguments.
 
 ## Parquet files
 
+Reading parquet files goes with
+
 ```{R read.parquet, eval=FALSE}
 read.parquet(file)
 ```
+which returns a spark data frame.  However, the handling of `file`
+argument is non-trivial.
 
 * `file`: file name, actually the name of the folder where parquet
   holds it's files
@@ -373,10 +388,28 @@ read.parquet(file)
       allowed, and only with commas, not `..` ranges (linux, 2.3.1).
       Brace expansion can be combined with patters, so a name like
       `/data/{home,work}/file*` is valid.
+	* unlike `write.parquet`, `file` for reading also does tilde
+      expansion.  (linux, 3.0.1)
     * If you want to read all parquet file (or rather folders) in a
       directory, you have to specify `file` as `path/to/directory/*`.
       If you leave out the trailing wildcard `*`, you get
       an error _Unable to infer schema for Parquet_ (2.3.1).
+
+Writing parquet files is similar:
+
+```{R, eval=FALSE}
+write.parquet(df, path, mode)
+```
+
+* `df` is your (spark) data frame
+* `path` is the path/file name
+    * unlike `read.parquet`, `path` does not do tilde expansion!
+      So, e.g. storing data frame into a file `"~/foo"` stores file
+      `foo` into
+      a folder named `~` in the current directory.  However,
+      `read.parquet` attempts to read file `foo` from your home
+      folder.  (linux, 3.0.1)
+* `mode`: use `"overwrite"` to overwrite existing file.
 
 
 # Data selection and subsetting
@@ -1324,7 +1357,7 @@ read as character string.  This can be converted to timestamps with
 `to_timestamp`:
 ```{r, convertTime, cache=FALSE}
 dateDF2 <- dateDF %>%
-   withColumn("date", to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss"))
+   withColumn("date", to_timestamp(column("string"), "M/d yyyy HH:mm:ss"))
 collect(dateDF2)
 ```
 As you can see, the result printed in your current time zone,
@@ -1338,12 +1371,12 @@ add the time zone descriptor by [`concat`](#concat) to the string.
 For instance, if the original time was given in Kabul time (UTC+4:30),
 you can add the TZ descriptor "+04:30" (note the leading "0") while
 also adding TZ format symbol "XXX" (see more in
-[java SimpleDateFormat](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)): 
+[Spark Datetime Pattern](https://spark.apache.org/docs/latest/api/R/index.html)): 
 ```{r, convertTimeTZ}
 dateDF %>%
    withColumn("date",
               to_timestamp(concat(column("string"), lit("+04:30")),
-                           "MM/dd yyyy HH:mm:ssXXX")) %>%
+                           "M/d yyyy HH:mm:ssXXX")) %>%
    collect()
 ```
 Now the `date` column is different from the string representation
@@ -1365,10 +1398,10 @@ zones.
 The timestamp columns can be easily compared with R _POSIXct_ objects
 in a given TZ.  For instance, we can extend the example above and
 check which case corresponds to Kabul time 18:44:33 September 21th, 1949:
-```{r}
+```{r addTZ}
 dateDF %>%
    mutate(date = to_timestamp(concat(column("string"), lit("+04:30")),
-                           "MM/dd yyyy HH:mm:ssXXX")) %>%
+                           "M/d yyyy HH:mm:ssXXX")) %>%
    mutate("6pm" = column("date") == ISOdate(1949,9,21, 18,44,33, tz="Asia/Kabul")) %>%
    collect()
 ```
@@ -1383,7 +1416,7 @@ it from UTC to the desired TZ.  For instance:
 One may also keep time in _utc\_timestamp_:
 ```{r, keepUTC}
 dateDF %>%
-   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   mutate(date = to_timestamp(column("string"), "M/d yyyy HH:mm:ss")) %>%
    mutate(dateUTC = to_utc_timestamp(column("date"), Sys.timezone())) %>%
    collect()
 ```
@@ -1403,9 +1436,8 @@ _timestamp_.
 
 When we want to convert a _timestamp_ to a string, we
 can use `date_format(column, format string)` (note: we need 
-[java format
-symbols](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)
-again).  The sring representation will use the current TZ as set by
+[Spark Datetime Pattern](https://spark.apache.org/docs/latest/api/R/index.html)
+symbols).  The sring representation will use the current TZ as set by
 the operating system.
 For instance:
 ```{r dateFormatExample1, dependson="dateConvertExample1"}
@@ -1543,13 +1575,13 @@ dateDF2 %>%
 #### _timestamp_ from character: `to_timestamp()`
 
 `to_timestamp(x, format)` converts column `x` to timestamp using
-[java SimpleDateFormat](https://docs.oracle.com/javase/7/docs/api/java/text/SimpleDateFormat.html)
+[Spark Datetime Pattern](https://spark.apache.org/docs/latest/api/R/index.html)
 specifications. 
 
 An example script that performs all these tasks:
 ```{r to_timestampExample, cache=FALSE}
 dateDF %>%
-   mutate(date = to_timestamp(column("string"), "MM/dd yyyy HH:mm:ss")) %>%
+   mutate(date = to_timestamp(column("string"), "M/d yyyy HH:mm:ss")) %>%
    collect()
 ```
 
@@ -1593,7 +1625,7 @@ information as above:
 dateDF1 <- dateDF %>%
    withColumn("date",
               to_timestamp(concat(column("string"), lit("+04:30")),
-                           "MM/dd yyyy HH:mm:ssXXX"))
+                           "M/d yyyy HH:mm:ssXXX"))
 dateDF1 %>%
    collect()
 ```
@@ -1628,10 +1660,6 @@ ports are not there, only 4040.
 
 8080 is for master
 
-
-## knitr: spark objects cannot be cached
-
-This includes window specifications, dataframes
 
 
 ## Merging by a large number of keys

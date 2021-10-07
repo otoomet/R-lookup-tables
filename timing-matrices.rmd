@@ -450,17 +450,6 @@ substantial speed penalty.
 
 
 
-## No parallelism
-
-```{r large, dependson=c("task", "loops")}
-N <- 400
-R <- 100
-P <- 1
-registerDoParallel(cores=P)
-microbenchmark(forLoop(R), whileLoop(R),
-               lapplyLoop(R), doLoop(R), mclapplyLoop(R), doparLoop(R),
-               times=4, control=list(warmup=1))
-```
 
 As you can see, when execution time reaches to seconds, all the loops
 run at virtually the same speed.  This is to be expected as the
