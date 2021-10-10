@@ -79,19 +79,52 @@ The most important PTS commands to manage the results are
 * `remove-result <test id>`  Delete the file, corresponding to the
   test id (the first bold name listed by `list-saved-results`).
 
+If you run similar tests (e.g. the same test suite) on different
+computers, these will obviously stored separately, and also uploaded
+separately.  You can view them on OBO by selecting both tests and
+clicking "compare results".  This also works with more than two
+results obviously.
+
+As an alternative, you may download the results of your other computer
+tests using
+```sh
+phoronix-test-suite clone-openbenchmarking-result <public-id>
+```
+This just downloads the results file and adds it to the list of saved
+results.  You can also merge the results into a single file using
+```sh
+phoronix-test-suite merge-results <public-id-1> <public-id-2>
+```
+This creates a new results file named something like `merge-8520`.
+
+You can now view these results locally using
+```sh
+phoronix-test-suite show-result <merged-file-id>
+```
+where the _<merged-file-id>_ is name of the merged file you just
+created.  There are also other PTS options you can use for analysis
+here, e.g. _executive-summary_ or _result-file-stats_.
 
 
 ## How to create a personal phoronix test suite
 
+There are several reasons to create a new customized test suite.  In
+particular, you want to run a few tests you are interested on systems
+you care about.  The existing test suites tend to be focused on a
+single component of the system.
+
+Perhaps the easiest way to start with a new suite is to use the
+_build-suite_ option:
 ```sh
 phoronix-test-suite build-suite
 ```
+This asks for name and a few other bits of metadata for the suite, and
+thereafter lets you to walk through individual tests you want to add.
+I recommend to add 1-2 tests and select the test paramters
+in this way in order to get a complete
+test suite xml file.  But you have to pick these from a long list, and
+supply the corresponding test number.
 
-Asks name, type (system/processor/...)
-
-What is a good test type?  Processor seems too narrow.
-
-Subtests: have to pick from a long list, and can select parameters.
 Fills out the test in
 `.phoronix-test-suite/test-suites/local/<suite-name>` as an _Execute_
 element with tags _Test_ (test name), _Arguments_ and _Description_.
@@ -139,6 +172,11 @@ openbenchmarking as
 ```sh
 phoronix-test-suite upload-test-suite local/general-pc-test
 ```
+
+Asks name, type (system/processor/...)
+
+What is a good test type?  Processor seems too narrow.
+
 
 ### Rebuilding?
 
