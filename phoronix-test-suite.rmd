@@ -76,8 +76,9 @@ The most important PTS commands to manage the results are
   to _Enter a unique name to describe this test run /
   configuration:_).
   
-* `remove-result <test id>`  Delete the file, corresponding to the
+* `remove-result <test-id>`  Delete the file, corresponding to the
   test id (the first bold name listed by `list-saved-results`).
+  `remove-result` accepts more than one _test-id_, but ignores those. 
 
 If you run similar tests (e.g. the same test suite) on different
 computers, these will obviously stored separately, and also uploaded
@@ -96,22 +97,37 @@ results.  You can also merge the results into a single file using
 phoronix-test-suite merge-results <public-id-1> <public-id-2>
 ```
 This creates a new results file named something like `merge-8520`.
+Note that you do not have to download (clone) the results in order to
+merge it, _public-id_ may be just OBO public id and it will be
+directly downloaded from OBO (and also saved on your disk).
+After merging, you may want to rename
+the results to something better using `rename-results-file <id>` where
+_id_ is the name of the merged file, `merge-8520` in the example
+above.  PTS will prompt you for a new file name.
 
 You can now view these results locally using
 ```sh
 phoronix-test-suite show-result <merged-file-id>
 ```
 where the _<merged-file-id>_ is name of the merged file you just
-created.  There are also other PTS options you can use for analysis
+created.  This opens the webpage of the results, and enables filters
+and web-based test management through a small webserver, built into
+PTS.  When you hit enter in terminal, the server will be shut down.
+The static webpage will still be visible.
+
+There are also other PTS options you can use for analysis
 here, e.g. _executive-summary_ or _result-file-stats_.
 
 
-## How to create a personal phoronix test suite
+## How to create a personal test suite
 
-There are several reasons to create a new customized test suite.  In
-particular, you want to run a few tests you are interested on systems
-you care about.  The existing test suites tend to be focused on a
-single component of the system.
+There are several reasons to create a new customized test suite.  If
+you want to run more than a single test on
+systems that
+you care about, then a dedicate suite may be the best option.
+The existing test suites tend to be focused on a
+single component of the system, and may be too large or otherwise
+unsuitable for what you want to do.
 
 Perhaps the easiest way to start with a new suite is to use the
 _build-suite_ option:
