@@ -21,10 +21,12 @@ knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
                       cache=FALSE,
                       message=FALSE)
-library("SparkR", lib.loc=file.path(Sys.getenv("HOME"), "local", "spark", "R", "lib"))
+SPARK_HOME <- file.path(Sys.getenv("HOME"), "local", "spark")
+library("SparkR", lib.loc=file.path(SPARK_HOME, "R", "lib"))
 library(magrittr)
 ss <- sparkR.session(master = "local[2]",
                      appName = "sparkr notes",
+                     sparkHome = SPARK_HOME,
                      sparkConfig=list(spark.sql.parquet.compression.codec="gzip",
                                       spark.driver.memory="8g",
                                       log4j.logger.org.apache.parquet="INFO"
@@ -56,7 +58,7 @@ read about pipes is Garret Grolemund and Hadley Wickham's [R for data science](h
 
 ## SparkR and _dplyr_
 
-SparkR takes a similar approach as _dplyr_ in transforming data, so I
+SparkR takes a similar approach as _dplyr_ for transforming data, so I
 strongly recommend you to familiarize yourself with _dplyr_ before you
 start with spark.  An excellent source for this
 is Garret Grolemund and Hadley Wickham's [R for data science](http://r4ds.had.co.nz/), section
@@ -95,18 +97,20 @@ function in _SparkR_.
 
 # General concepts
 
-## RDD
+## RDD: the basic dataset
 
 The central data structure in spark is _Resilient Distributed Dataset_
 (RDD).  Resilient means that if something breaks in the workflow, for
-instance a cluster node dies, it can be recovered from an earlier stage and
-the _RDD lineage_ information.  
-
+instance a cluster node dies, the data can be recovered from an earlier stage and
+the _RDD lineage_ information.
 So RDD is not just a dataset: a number in RDD is not just a number, but
 a number plus information where this number comes from.
 
+Dataframes in spark are made of RDD-s and hence inherit the RDD
+properties, in particular the lineage.
 
-### Checkpointing
+
+### Checkpointing {#general-checkpointing}
 
 As one operates repeatedly on the same data, the RDD lineage may grow
 without limits.  This happens, for instance, if you add data to an RDD
@@ -135,6 +139,34 @@ However, checkpointing is not without it's downsides.  It saves data
 on the disk, and this may be quite slow.  Second, it may take quite a
 bit storage as you are essentially writing all your data on disk in
 uncompressed format.
+
+
+## Jobs, stages, tasks {#jobs-stages-tasks}
+
+Spark splits its work into _jobs_, _stages_, and _tasks_.
+
+* A **job** is what broadly corresponds to a spark function,
+  e.g. `read.json` or `select("id", "name")`.  But as spark uses lazy
+  evaluation and optimizes the queries,
+  the jobs may not exactly correspond to the original
+  code. 
+* Jobs are further divided into **stages** that contain the subtasks.
+  In case of simple jobs, e.g. when reading a file, a single stage may
+  correspond to a single job.
+* Finally, stages are split into **tasks**, these are normally just
+  similar data processing tasks that can run in parallel on different
+  executors, or may be run sequentially on the same executor.
+
+Spark displays it's progress on console when: a bar like
+```
+[Stage 0:====================================================>    (55 + 1) / 60]
+```
+indicates that 55 tasks out of total 60 in stage 0 are done.
+
+The best way to understand what are the jobs and stages is to check
+the DAG visualization in the [Web monitoring
+window](#web-monitoring-ports). 
+  
 
 
 # Installing and Invoking Spark
@@ -168,7 +200,7 @@ If you have never previously installed java, you can just add the most
 recent Java 1.8.
 
 If you have an incompatible version, you can add another java fairly
-easily.  On debian-based **linux** (such as ubuntu), you can select the
+easily.  On debian-based linux (such as ubuntu), you can select the
 default java by
 ```bash
 sudo update-alternatives --config javac
@@ -177,7 +209,7 @@ this updates a few symlinks to ensure the correct java version is
 taken as default.
 
 Another way is just to specify the `JAVA_HOME` environment variable.
-This approach also works on **Mac**, and it allows you to pick a
+This approach also works on Mac, and it allows you to pick a
 specific version of java just for Spark while leaving the system
 defaults untouched.  When running Spark from inside R, the easiest
 approach is to set the environment variable by `Sys.setenv` with
@@ -301,6 +333,44 @@ full, spark fails even if there is still plenty of space on the
 other (2.1.2).
 
 
+## Interacting with spark {#interacting-spark}
+
+One can invoke sparkR in an ordinary R session like any other
+interactive command.  This is great for testing/debugging and trying
+to understand spark.  Note that the commands on spark are much slower
+compared to the base R when using small dataframes.
+
+For anything resembling a more serious work I'd recommend to run
+SparkR in batch mode, exactly as any other R script.
+
+
+### Web monitoring ports {#web-monitoring-ports}
+
+Spark also sets up a small web server that allows you to monitor some
+of the spark's internal workings.
+
+Port 4040 shows the basics of the working: [jobs, stages, and
+tasks](#jobs-stages-tasks).  Here is an example of how what you can see in web
+monitoring. 
+
+![Web monitoring example](spark-web-monitoring-stages.png)
+
+8080 is for master
+
+if you start spark locally (--master local[n]), then the 8080 and 8081
+ports are not there, only 4040.
+
+A very useful information you get from the web monitor is _DAG
+visualization_.  This shows how the pieces of data are linked, which
+stages are done, and what kind of lookups spark has to do for the
+processing.  You can see DAG for jobs when clicking on a particular
+job and selecting _DAG Visualization_, or a more detailed DAG if you
+select stages and check the stage DAG visualization instead.
+
+If DAG gets too complicated then spark gets slow and it
+is advisable to break the lineage using [checkpointing](#general-checkpointing).
+
+
 # Data input and output
 
 ## From R to spark and back
@@ -325,7 +395,9 @@ will give an unhelpful error regarding to subscript out of bounds.
 
 
 
-## How to read csv files
+## How to read csv and json files {#how-read-csv-json-files}
+
+### CSV files
 
 CSV files are one of the most common and versatile forms of data.
 SparkR reads these pretty well but unfortunately, the documentation is
@@ -369,6 +441,16 @@ columns afterwards (this can probably also be achieved by schemas).
 
 There is an alternative function, `read.df`, that differs from loadDF
 by the default arguments.
+
+
+### JSON files {#how-read-csv-json-files-json}
+
+JSON files can read with
+```{R loadJSON, eval=FALSE}
+load.json(fName)
+```
+
+* `fName` can be a vector of character file names.
 
 
 ## Parquet files
@@ -445,9 +527,10 @@ dfa %>%
    collect()
 ```
 
-## Filtering observations
+## Filtering and sampling observations {#filtering-sampling-observations}
 
-The way to filter observations is `filter`.  It expects a column
+The way to filter observations based on a logical expression
+is `filter`.  It expects a column
 expression.
 
 Example:
@@ -470,6 +553,14 @@ df %>% filter(column("date") == ISOdatetime(2018,10,17,14,34,12)) %>%
 It still works, but the warning is unpleasant.
 
 Note that you cannot use `suppressWarnings` with piping.
+
+One can sample a certain percentage of observations with
+```{r sample, eval=FALSE}
+sample(df, withReplacement, fraction)
+```
+where fraction is the percentage of the original data to be sampled.
+The fraction is claimed to be approximate, and
+there seems to be no way to sample an exact number of observations.
 
 
 # Working with data: the _map_ part
@@ -1652,15 +1743,6 @@ representation of the timestamp.
 
 
 # Other notes (draft)
-
-## Web Monitoring Ports
-
-if you start spark locally (--master local[n]), then the 8080 and 8081
-ports are not there, only 4040.
-
-8080 is for master
-
-
 
 ## Merging by a large number of keys
 
