@@ -1,0 +1,88 @@
+---
+title: "Asymptote"
+subtitle: "An attempt to improve docs"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    toc: true
+    toc_float:
+      smooth_scroll: false
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                      cache=FALSE, 
+                      message=FALSE)
+library(magrittr)
+```
+
+# Introduction
+
+Asymptote is an excellent tool to greate more complex editable
+graphs.  However, the documentation is thin and very hard to
+navigate.  Here are some notes.
+
+
+# Command line usage {#command-line-usage}
+
+## Output formats
+
+Output formats can be specified
+```
+asy -f <format>
+```
+
+At least these formats are supported: 
+
+* **eps** (default)
+* **pdf**
+* **jpg**: uses imagemagick to convert to jpg.  Ensure you imagemagick
+  policies are permissive enough!
+* **png**: uses transparent background
+
+
+# Frames and pictures {#frames-pictures}
+
+Frames and pictures are a way to repeate certain complex drawings when
+potentially transforming those in the process.
+
+## Pictures
+
+Pictures are, well, pictures.
+
+The following example demonstrates how to create a new picture, and
+add it to the main picture several times with small modifications.  We
+create the main picture that contains a diagonal line, and another
+_picture_ object that contains a scaled unit circle.  Thereafter we a)
+add the circle-picture on the main picture unchanged, and b) add it
+second time, scaled and shifted to the end of the diagonal line:
+
+```{r cache=FALSE, echo=FALSE}
+knitr::read_chunk("positioning-picture.asy", labels="pos")
+```
+```{cpp pos, eval=FALSE}
+```
+
+This results in
+
+![](positioning-picture.png)
+
+The originally defined _size_ applies
+to the new pictures as well, so adding a new picture will
+automatically scale in a way that the unit size will be the same as on
+the original picture.
+
+## Frames
+
+Frames are somewhat similar to pictures, but it seems one cannot
+change _size_ or _unitsize_ on frames.  The result will be in
+postscript units.  However, one can use similar `add` function, and
+scale frames.
