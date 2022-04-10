@@ -19,7 +19,7 @@ output:
 options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
 knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
-                      cache=FALSE, 
+                      cache=FALSE,
                       message=FALSE)
 library(magrittr)
 ```
@@ -49,6 +49,66 @@ At least these formats are supported:
 * **png**: uses transparent background
 
 
+# Labels
+
+## Labeling points
+
+The basic way to add labels to points is with
+
+```
+label(Label L, pair position, align align, pen p, filltype filltype)
+```
+
+* **L** is a text string that may contain latex.  It may also be a
+  dedicated _Label_ object.
+* **position** is the point location we are labeling.
+* **align** is the location of label with respective to the position.
+  By default, the label is centered at the position.  This should be a
+  vector (_pair_) that indicates the position of the closest corner of
+  the lable with respect to the point.
+  
+  There are a
+  number of pre-defined compas directions (`N`, `S`, `E`, `W`, `SE`, `SW`, `ENE`
+  and such) that define the direction where to shift the label away
+  from the point by a suitable amount.
+  For instance, when using align `NW`, then the label
+  is positioned top-right of the position, so that its lower-right
+  corner is in the NW direction.
+  
+  The defined compas directions are just shortcuts for vectors in that
+  direction.  These can be scaled and added (e.g. `2*N + E`), and one
+  can supply other vectors.  A useful way to create vectors is
+  function `dir` that creates an unit vector in given direction (in
+  degrees).
+* **pen** are typically colors
+* **filltype**: the background of a label can be filled with a given
+  color, e.g. you may want to specify `Fill(white)` to add a white
+  background on a label that is on top of obscured by other elements.
+
+The following image demonstrates a few of these tools:
+
+* The first label is attached to the horizontal spoke, East of it.
+  All the pre-defined compas directions can be used in this fashion.
+* The second, $30^\circ$ label, is actually labeling the origin,
+  but shifted outside of
+  the circle.  This is achieved by multiplying the alignment
+  vector `dir(30)` by 32.  This number depends on the size and should
+  be found by experimenting.
+* the third label is attached to the `dir(150)` point, however, to
+  the opposite direction (inside of the circle) of it.  The background
+  is filled white in order to remove the spoke behind the label.
+
+```{r cache=FALSE, echo=FALSE}
+knitr::read_chunk("asymptote/labels-dir-fill.asy", labels="labels-dir-fill")
+```
+```{r labels-dir-fill, eval=FALSE}
+```
+
+This results in
+
+![](asymptote/labels-dir-fill.png)
+
+
 # Frames and pictures {#frames-pictures}
 
 Frames and pictures are a way to repeate certain complex drawings when
@@ -68,12 +128,12 @@ second time, scaled and shifted to the end of the diagonal line:
 ```{r cache=FALSE, echo=FALSE}
 knitr::read_chunk("asymptote/positioning-picture.asy", labels="pos")
 ```
-```{cpp pos, eval=FALSE}
+```{r pos, eval=FALSE}
 ```
 
 This results in
 
-![](positioning-picture.png)
+![](asymptote/positioning-picture.png)
 
 The originally defined _size_ applies
 to the new pictures as well, so adding a new picture will
@@ -112,7 +172,7 @@ error, unless the return value is declared as _void_.
 knitr::read_chunk("asymptote/multiply-function-demo.asy",
                   labels="multiply-function-demo")
 ```
-```{cpp multiply-function-demo, eval=FALSE}
+```{r multiply-function-demo, eval=FALSE}
 ```
 
 The output is:
