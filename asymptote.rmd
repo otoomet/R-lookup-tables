@@ -66,7 +66,7 @@ add the circle-picture on the main picture unchanged, and b) add it
 second time, scaled and shifted to the end of the diagonal line:
 
 ```{r cache=FALSE, echo=FALSE}
-knitr::read_chunk("positioning-picture.asy", labels="pos")
+knitr::read_chunk("asymptote/positioning-picture.asy", labels="pos")
 ```
 ```{cpp pos, eval=FALSE}
 ```
@@ -86,3 +86,37 @@ Frames are somewhat similar to pictures, but it seems one cannot
 change _size_ or _unitsize_ on frames.  The result will be in
 postscript units.  However, one can use similar `add` function, and
 scale frames.
+
+
+# Coding
+
+## Output
+
+Output to console can be done using `write`, it accepts a list of
+arguments that will be printed, no spaces are inserted between the
+list items.  It can print various _asymptote_ data
+structures, including pairs and paths.  See example in
+[Functions](#coding-functions). 
+
+
+## Functions {#coding-functions}
+
+Function definition is fairly similar to function in C++ and java.
+You have to declare the return type, and argument types.  Argument
+default values are accepted.
+
+Function must return a value--a missing return statement results in an
+error, unless the return value is declared as _void_.
+
+```{r cache=FALSE, echo=FALSE}
+knitr::read_chunk("asymptote/multiply-function-demo.asy",
+                  labels="multiply-function-demo")
+```
+```{cpp multiply-function-demo, eval=FALSE}
+```
+
+The output is:
+```
+2*3=6
+2*4=8
+```

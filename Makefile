@@ -1,5 +1,7 @@
 SOURCES = $(wildcard *.rmd)
 HTML = $(patsubst %.rmd, %.html, $(SOURCES))
+ASYS = $(wildcard asymptote/*.asy)
+ASY_PNGS = $(patsubst %.ASY, %.PNG, $(ASYS))
 
 ## run in parallel using 50% of available threads
 PARALLEL := $(shell expr $(shell nproc) / 2 )
@@ -15,7 +17,7 @@ MAKEFLAGS += -j$(PARALLEL)
 %.png: %.asy
 	asy -f png $<
 
-asymptote.html: asymptote.md positioning-picture.png
+asymptote.html: asymptote.md $(ASY_PNGS)
 
 all: $(HTML)
 
