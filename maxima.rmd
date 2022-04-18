@@ -1,0 +1,69 @@
+---
+title: "Maxima"
+subtitle: "Trying to write readable docs"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    toc: true
+    toc_float:
+      smooth_scroll: false
+    toc_depth: 2
+    number_sections: true
+---
+
+```{r setup, include=FALSE, cache=FALSE}
+options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
+knitr::knit_engines$set(maxima = function(options) {
+  code <- paste(options$code, collapse = '\n')
+  out  <- system2(
+     'maxima', c('-q --batch-string ', shQuote(code)),
+     stdout = TRUE
+  )
+  knitr::engine_output(options, code, out[-1])
+                           # remove the first empty line from maxima output
+})
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, 
+                      cache=FALSE,
+                      message=FALSE)
+library(magrittr)
+```
+
+# Introduction
+
+Maxima is a nice computer algebra system, however, the docs are rather
+hard to read.
+
+
+# Assignment
+
+Variables can be assigned as `variable : expression`.  For instance,
+
+```{maxima}
+x : 1;
+q : 1 - p;
+```
+
+
+# Messing with expressions
+
+## Simplification
+
+`expand` opens parenthesis and collects the relevant items:
+
+```{maxima}
+e : (a + b)*(a - b);
+expand(e);
+```
+
+`ratsimp` attempts to simplify the expression into fractions of
+polynomials, including inside of non-rational functions.
+
+```{maxima}
+e: a^2 - b^2;
+ratsimp(e);
+```
