@@ -38,8 +38,23 @@ library(magrittr)
 Maxima is a nice computer algebra system, however, the docs are rather
 hard to read.
 
+A distinct feature of maxima is that each command must end ended with
+semicolon.  The command is not reacted upon until one enters the
+semicolon, it feels as if maxima is not working while in fact it is
+just waiting for the semincolon, possibly on a new line.
 
-# Assignment
+
+## Online help
+
+The help can be accessed with
+
+```
+? <topic>
+```
+(note space between `?` and the topic.)  Topics can be function names.
+
+
+# Variables, Functions, and Assignment
 
 Variables can be assigned as `variable : expression`.  For instance,
 
@@ -64,6 +79,6 @@ expand(e);
 polynomials, including inside of non-rational functions.
 
 ```{maxima}
-e: a^2 - b^2;
+e : a^2 - b^2;
 ratsimp(e);
 ```
