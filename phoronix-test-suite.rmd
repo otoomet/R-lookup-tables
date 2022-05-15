@@ -59,9 +59,14 @@ list-saved-results`.  See [Manage results](#manage-results)
 
 ## Manage results {#manage-results}
 
-The most important PTS commands to manage the results are
+Managing PTS results works through command line as
+`phoronix-test-suite <arguments>`.  Below, we describe the more
+important argumnets.
 
-* `list-saved-results`
+
+### Find out what you have already done
+
+`list-saved-results`
   lists the locally saved results.  The results are
   displayed by test id (in bold) followed by the file name they are
   saved in
@@ -75,10 +80,9 @@ The most important PTS commands to manage the results are
   It also lists test runs inside the files (answer
   to _Enter a unique name to describe this test run /
   configuration:_).
-  
-* `remove-result <test-id>`  Delete the file, corresponding to the
-  test id (the first bold name listed by `list-saved-results`).
-  `remove-result` accepts more than one _test-id_, but ignores those. 
+
+
+### Merging similar tests
 
 If you run similar tests (e.g. the same test suite) on different
 computers, these will obviously stored separately, and also uploaded
@@ -115,8 +119,34 @@ and web-based test management through a small webserver, built into
 PTS.  When you hit enter in terminal, the server will be shut down.
 The static webpage will still be visible.
 
+
+### Renaming results
+
+When you find that an earlier name you gave to the set of results does
+not cut any more, or if you merged a few results and are stuck with a
+name like _merge-7683_, then you can rename those:
+
+```sh
+phoronix-test-suite rename-result-file merge-7683
+```
+will prompt for a new name for results _merge-7683_ and renames the
+file.  It can also show the results in browser.
+
+Note that it accepts additional arguments, so one is tempted to put
+the new file name at the end of the command, but those are ignored.
+
+
+### Summarize results
+
 There are also other PTS options you can use for analysis
 here, e.g. _executive-summary_ or _result-file-stats_.
+
+
+### Delete resutls
+  
+`remove-result <test-id>`  Delete the file, corresponding to the
+  test id (the first bold name listed by `list-saved-results`).
+  `remove-result` accepts more than one _test-id_, but ignores those. 
 
 
 ## How to create a personal test suite
@@ -192,6 +222,18 @@ phoronix-test-suite upload-test-suite local/general-pc-test
 Asks name, type (system/processor/...)
 
 What is a good test type?  Processor seems too narrow.
+
+
+### Adding tests to your suite
+
+Normally you first want to run a test and see if it works, and if it
+does what you are interested in.  After you run the test, then the
+results are stored in
+`~/.phoronix-test-suite/test-results/<test-name>/composite.xml`.  It
+seems you can pick those from there.  You pick the
+`<Result>...</Result>` block, and replace `<Result>` with `<Execute>`
+and `<Identifier>` with `<Test>`.  Most importantly, you want to see
+what actual arguments were used for the actual run and keep those.
 
 
 ### Rebuilding?
