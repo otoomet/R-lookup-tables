@@ -8,19 +8,25 @@ output:
     df_print: kable
     fig_caption: false
     code_folding: hide
+    css: files/style.css
+    toc: true
+    toc_depth: 2
+    toc_float: true
+    number_sections: true
 ---
 
-# Phoronix test suite
+# Introduction
 
 Phoronix test suite (PTS) is a testing suite.  Openbenchmarking.org
 (OBO) is the website.
 
-## Running tests
+# Running tests {#running-tests}
 
 Various types of tests can be run with
 ```sh
 phoronix-test-suite benchmark <test>
 ```
+
 `<test>` may be a single test (e.g. `pts/openarena`), a test suite
 (e.g. `renderers`), or a code for existing openbenchmarking test
 (e.g. `2110066-PTS-10600KOK66`).
@@ -39,6 +45,9 @@ PTS asks a number of questions:
   have to perform the same tests, but if you put different tests into
   the same file then you cannot really compare the runs anyway, so it
   is kind of moot.
+  
+  These file names for the main **test-id** for the test management
+  commands below.
 * _Enter a unique name to describe this test run / configuration:_
   Inside of the files, different test runs are distinguished by this
   name.  Here you can put your computer name and tell something about
@@ -57,18 +66,19 @@ You can query the locally saved results by `phoronix-test-suite
 list-saved-results`.  See [Manage results](#manage-results)
 
 
-## Manage results {#manage-results}
+# Manage results {#manage-results}
 
 Managing PTS results works through command line as
 `phoronix-test-suite <arguments>`.  Below, we describe the more
 important argumnets.
 
 
-### Find out what you have already done
+## Find out what you have already done
 
 `list-saved-results`
   lists the locally saved results.  The results are
-  displayed by test id (in bold) followed by the file name they are
+  displayed by **test-id** (in bold, see Section [Running Tests](#running-tests))
+  followed by the file name they are
   saved in
   (this is the answer to the
   question _Enter a name for the result file:_ when running a
@@ -82,7 +92,7 @@ important argumnets.
   configuration:_).
 
 
-### Merging similar tests
+## Merging similar tests
 
 If you run similar tests (e.g. the same test suite) on different
 computers, these will obviously stored separately, and also uploaded
@@ -120,7 +130,7 @@ PTS.  When you hit enter in terminal, the server will be shut down.
 The static webpage will still be visible.
 
 
-### Renaming results
+## Renaming results
 
 When you find that an earlier name you gave to the set of results does
 not cut any more, or if you merged a few results and are stuck with a
@@ -136,60 +146,67 @@ Note that it accepts additional arguments, so one is tempted to put
 the new file name at the end of the command, but those are ignored.
 
 
-### Summarize results
+## Summarize results
 
 There are also other PTS options you can use for analysis
 here, e.g. _executive-summary_ or _result-file-stats_.
 
 
-### Delete resutls
+## Delete results
   
 `remove-result <test-id>`  Delete the file, corresponding to the
   test id (the first bold name listed by `list-saved-results`).
   `remove-result` accepts more than one _test-id_, but ignores those. 
 
 
-## How to create a personal test suite
+## Upload results to OBO
+
+Normally you are given an option to upload your results after you have
+run the test.  However, if you have combined or otherwise re-arrange
+the results then you may upload the new results files explicitly:
+```sh
+phoronix-test-suite upload-restult <test-id>
+```
+uploads the result.  (See Section [Running tests](#running-tests) for explanation
+of _test-id_.)
+
+
+# How to create a personal test suite
 
 There are several reasons to create a new customized test suite.  If
 you want to run more than a single test on
 systems that
 you care about, then a dedicate suite may be the best option.
 The existing test suites tend to be focused on a
-single component of the system, and may be too large or otherwise
-unsuitable for what you want to do.
+single component of the system, and may be too large or otherwise not
+a good fit for what you want to test.
+
+## Create a suite using `build-suite`
 
 Perhaps the easiest way to start with a new suite is to use the
 _build-suite_ option:
 ```sh
 phoronix-test-suite build-suite
 ```
-This asks for name and a few other bits of metadata for the suite, and
+This command asks for the name, and for a few other bits of metadata
+for the new suite, and
 thereafter lets you to walk through individual tests you want to add.
 I recommend to add 1-2 tests and select the test paramters
 in this way in order to get a complete
 test suite xml file.  But you have to pick these from a long list, and
 supply the corresponding test number.
 
-Fills out the test in
-`.phoronix-test-suite/test-suites/local/<suite-name>` as an _Execute_
-element with tags _Test_ (test name), _Arguments_ and _Description_.
-```xml
-  <Execute>
-    <Test>pts/openarena-1.5.5</Test>
-    <Arguments>+set r_customWidth 1920 +set r_customHeight 1080</Arguments>
-    <Description>Resolution: 1920 x 1080</Description>
-  </Execute>
-```
-**_Description_ is necessary for the test to obey the arguments**.
-Description is printed at the beginning of the test run, you can
-change its content, but if the field is not there, it will not run
-correctly (may fail to run, or pick wrong set of parameters).
+Among the other things the command asks is _type_
+(system/processor/...), there do not seem to be options that let you
+to test different components.  But it does not matter in terms of how
+the test runs.
 
+## Test suite file format
 
-The test suite definition is located in
-`.phoronix-test-suite/test-suites/local/<suite-name>` and called
-`suite-definition.xml`.  It looks like
+The command stores the new test into the folder
+`.phoronix-test-suite/test-suites/local/<suite-name>` in a file 
+called
+`suite-definition.xml`.  It looks something along these lines:
 ```xml
 <?xml version="1.0"?>
 <!--Phoronix Test Suite v10.4.0-->
@@ -198,7 +215,10 @@ The test suite definition is located in
     <Title>general-pc-test</Title>
     <Version>1.0.1</Version>
     <TestType>Processor</TestType>
-    <Description>A smallish general test containing single and multiple core tasks, and graphics</Description>
+    <Description>
+	  A smallish general test containing single
+	  and multiple core tasks, and graphics
+	</Description>
     <Maintainer>Ott Toomet</Maintainer>
     <PreRunMessage></PreRunMessage>
     <PostRunMessage></PostRunMessage>
@@ -212,19 +232,62 @@ The test suite definition is located in
 </PhoronixTestSuite>
 ```
 
+It contains three broad elements:
+
+* **PhoronixTestSuite** is the overall element that contains all the
+  other parts.
+* **SuiteInformation** contains name, description and a few other
+  parts of information.
+  This example test suite can be used as
+  `local/general-pc-test` or `<your-obo-user-name>/general-pc-test`.
+* Multiple **Execute** elements contain an individual test each.
+
+Individual tests inside _Execute_ elements may look like this:
+```xml
+  <Execute>
+    <Test>pts/openarena-1.5.5</Test>
+    <Arguments>+set r_customWidth 1920 +set r_customHeight 1080</Arguments>
+    <Description>Resolution: 1920 x 1080</Description>
+  </Execute>
+```
+The important elements here are
+
+* **Test** PTS test identifier.
+* **Arguments** PTS test argument list
+* **Description** A brief descriptions.  **_Description_ is necessary
+  for the test to obey the arguments**.  Description is printed at the
+  beginning of the test run, you can change its content, but if the
+  field is not there, it will not run correctly (may fail to run, or
+  pick wrong set of parameters).
+  
+  _Description_ must not contain several fields that are present in
+  the test results, including _Title_ and _AppVersion_.
+
+
+## Upload your suite to OBO
+
 When you are ready with the test suite, you can upload it to
 openbenchmarking as
-
 ```sh
-phoronix-test-suite upload-test-suite local/general-pc-test
+phoronix-test-suite upload-test-suite local/<your-suite-name>
 ```
+Before uploading you should increment the version number in the suite
+description, the uploader also asks for a commit message.  It should
+be something similar like for revision control commit.
 
-Asks name, type (system/processor/...)
+This makes is available globally as
+`<your-obo-user-name>/<your-suite-name>`, e.g. as
+`siim/general-pc-test`. 
 
-What is a good test type?  Processor seems too narrow.
+Before that, you need to connect your computer to your OBO account
+with
+```sh
+phoronix-test-suite openbenchmarking-login
+```
+This asks for your OBO user name and password.
 
 
-### Adding tests to your suite
+## Adding tests to your suite
 
 Normally you first want to run a test and see if it works, and if it
 does what you are interested in.  After you run the test, then the
@@ -236,7 +299,7 @@ and `<Identifier>` with `<Test>`.  Most importantly, you want to see
 what actual arguments were used for the actual run and keep those.
 
 
-### Rebuilding?
+## Rebuilding?
 
 _Rebuild_ is supposed to validate the xml but it messes up the
 arguments, and adds
@@ -249,8 +312,17 @@ into the file, and now this refuses to upload to openbenchmarking.
 It also changed _Mode_ to _BATCH_ and removed the arguments, so all my
 subtest selection was gone.
 
-#### Run the test
+## Run your suite
 
+You can run it locally as
 ```sh
 phoronix-test-suite rebuild-test-suite local/general-pc-test
+```
+Or if you are at a different computer, you can use
+```sh
+phoronix-test-suite test <your-obo-user-name>/<your-suite-name>
+```
+for instance,
+```sh
+phoronix-test-suite test siim/general-pc-test
 ```
