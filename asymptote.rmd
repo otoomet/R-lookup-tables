@@ -159,6 +159,28 @@ structures, including pairs and paths.  See example in
 [Functions](#coding-functions). 
 
 
+## For loops
+
+There are two types of for loops, both following the java/C++ style.  The
+first one contains the explicit initializer, condition, and increment
+statement, all separated by semicolons:
+```{java, eval=FALSE}
+for(int i = 0; i < 10; ++i) {
+   // do something
+}
+```
+The other is the "variable : collection" syntax to loop over all
+variables in a collection:
+```{java, eval=FALSE}
+for(pair point : pointlist) {
+   // do something
+}
+```
+Note that in both cases the loop variable must be defined inside of
+the loop operator.  The loop variable only exists within the loop and
+is lost as soon as the loop exits.
+
+
 ## Functions {#coding-functions}
 
 Function definition is fairly similar to function in C++ and java.
