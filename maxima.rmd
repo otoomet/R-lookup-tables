@@ -39,7 +39,7 @@ Maxima is a nice computer algebra system, however, the docs are rather
 hard to read.
 
 A distinct feature of maxima is that each command must end ended with
-semicolon.  The command is not reacted upon until one enters the
+a semicolon.  The command is not reacted upon until one enters the
 semicolon, it feels as if maxima is not working while in fact it is
 just waiting for the semincolon, possibly on a new line.
 
@@ -51,10 +51,21 @@ The help can be accessed with
 ```
 ? <topic>
 ```
-(note space between `?` and the topic.)  Topics can be function names.
+Note space between `?` and the topic, also semicolon is not needed.
+Topics can be function names.
 
 
 # Variables, Functions, and Assignment
+
+## Data types
+
+Matrices can be created using function `matrix` and
+wrapping individual lines in brackets:
+```{maxima}
+matrix([1,2],[3,4]);
+```
+
+## Variables
 
 Variables can be assigned as `variable : expression`.  For instance,
 
@@ -82,3 +93,10 @@ polynomials, including inside of non-rational functions.
 e : a^2 - b^2;
 ratsimp(e);
 ```
+
+
+# Functions
+
+## linear algebra
+
+* `determinant` (not `det`!)
