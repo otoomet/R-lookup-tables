@@ -17,6 +17,15 @@ output:
 
 ```{r setup, include=FALSE, cache=FALSE}
 options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
+knitr::knit_engines$set(asy = function(options) {
+  code <- paste(options$code, collapse = '\n')
+  out  <- system2(
+     'asy', c('-f png -c ', shQuote(code)),
+     stdout = TRUE
+  )
+  knitr::engine_output(options, code, out[-1])
+                           # remove the first empty line from maxima output
+})
 knitr::opts_knit$set(aliases=c(h="fig.height"))
 knitr::opts_chunk$set(fig.height=100/25.4, 
                       cache=FALSE,
@@ -47,6 +56,37 @@ At least these formats are supported:
 * **jpg**: uses imagemagick to convert to jpg.  Ensure you imagemagick
   policies are permissive enough!
 * **png**: uses transparent background
+
+
+# Data structures
+
+
+# Drawing {#drawing}
+
+## Drawing paths {#drawing-paths}
+
+The main drawing command is `draw`.  It most important arguments are
+```
+draw(path)
+```
+If the path contains a single pair, it just draws a dot.  
+
+
+## Drawing dots {#drawing-dots}
+
+Dots can be drawn with `dot(pair)`.  Dots are drawn using the current
+line width, and the width is magnified by system variable
+`dotfactor`.  For instance:
+```{asy}
+dotfactor=10;
+dot((1,2));
+dot((2,1));
+```
+
+The dot is
+drawn using the current line width, multiplied but `dotfactor`
+(default: 6).
+
 
 
 # Labels
