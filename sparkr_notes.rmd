@@ -526,6 +526,9 @@ dfa %>%
    drop(vars) %>%
    collect()
 ```
+However, it cannot handle multiple variable names as separate
+arguments--`drop("name", "yob")` will not work.
+
 
 ## Filtering and sampling observations {#filtering-sampling-observations}
 
@@ -558,7 +561,8 @@ One can sample a certain percentage of observations with
 ```{r sample, eval=FALSE}
 sample(df, withReplacement, fraction)
 ```
-where fraction is the percentage of the original data to be sampled.
+where fraction is the percentage (between 0 and 1) 
+of the original data to be sampled.
 The fraction is claimed to be approximate, and
 there seems to be no way to sample an exact number of observations.
 
