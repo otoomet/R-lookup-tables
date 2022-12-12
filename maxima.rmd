@@ -55,14 +55,16 @@ Note space between `?` and the topic, also semicolon is not needed.
 Topics can be function names.
 
 
-# Variables, Functions, and Assignment
+# Data Types, Variables, Operators
 
-## Data types
+## Basic Data types
 
-Matrices can be created using function `matrix` and
-wrapping individual lines in brackets:
+
+## Operators:
+
+**^**: exponentiation
 ```{maxima}
-matrix([1,2],[3,4]);
+2^5;
 ```
 
 ## Variables
@@ -72,6 +74,37 @@ Variables can be assigned as `variable : expression`.  For instance,
 ```{maxima}
 x : 1;
 q : 1 - p;
+```
+
+Variables can be removed with `kill` function:
+```{maxima}
+x: 1;
+x;
+kill(x);
+x;
+```
+
+## Functions
+
+Functions can be defined with `:=`, and called with just the name
+afterwards: 
+```{maxima}
+f(x, y) := x^2 - y^2;
+f(1,2);
+```
+
+Function bodies can contain multiple expressions, these should be
+separated by `,` (not by semicolon),
+potentially as the last character on a line.  If the
+function body contains multiple lines, these should be enclosed in
+parenthesis. 
+So we
+can define a function like
+```{maxima}
+r(x, y) := (x2 : x^2,
+ y2 : y^2, 
+ (x2 + y2)^0.5);
+r(1,1);
 ```
 
 
@@ -94,9 +127,64 @@ e : a^2 - b^2;
 ratsimp(e);
 ```
 
+`express` evaluates unevaluated expression
 
-# Functions
 
-## linear algebra
+## Solving equations
+
+`solve` can solve non-linear equations.  It takes two arguments: a
+[vector](#linear-algebra-data-types)
+of equations (including named equations), and a vector of
+variable names to be solved:
+```{maxima}
+a: x = 2*y;
+b: y = x+1;
+solve([a, b], [x, y]);
+```
+
+
+
+# Linear Algebra
+
+## Data Types {#linear-algebra-data-types}
+
+**Vectors** are created using brackets:
+```{maxima}
+v : [1, 2, 3];
+```
+creates a vector _v_ of length three.  Individual elements of vectors
+can be extracted with brackers, indexing is 1-based:
+```{maxima}
+v : [a, b, c];
+v[1];
+```
+
+**Matrices** can be created using function `matrix` and
+wrapping individual lines in brackets:
+```{maxima}
+matrix([1,2],[3,4]);
+```
+
+## Operators {#linear-algebra-operators}
+
+**.** is **inner product**.  For instance:
+```{maxima}
+u : [u1, u2];
+v : [v1, v2];
+u.v;
+```
+
+**~** is **outer product** (vector product),
+defined in _vect_ package: 
+```{maxima}
+load("vect");
+u : [u1, u2, u3];
+v : [v1, v2, v3];
+express(u ~ v);
+```
+
+
+
+## Library Functions
 
 * `determinant` (not `det`!)
