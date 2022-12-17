@@ -550,12 +550,35 @@ dates that have class of `c("POSIXct", "POSIXt")`:
 ```{r multiClassWarningExample}
 df <- data.frame(date = ISOdatetime(2018,10,17,14,34,12)) %>%
    createDataFrame()
-df %>% filter(column("date") == ISOdatetime(2018,10,17,14,34,12)) %>%
+df %>%
+   filter(column("date") == ISOdatetime(2018,10,17,14,34,12)) %>%
    collect()
 ```
-It still works, but the warning is unpleasant.
-
+It still works (Spark 3.3.1), but the warning is unpleasant.  It may
+not work in Spark 3.2.
 Note that you cannot use `suppressWarnings` with piping.
+
+As a workaround, you can use `as.POSIXct` when writing the conditions: 
+```{r}
+df <- data.frame(x = c(6,9,12,15,18),
+                 date = as.POSIXct(c("2022-12-16 6:30",
+                                     "2022-12-17 9:31",
+                                     "2022-12-18 12:32",
+                                     "2022-12-19 15:33",
+                                     "2022-12-20 18:34")),
+                 day = c("Fri", "Sat", "Sun", "Mon", "Tue")) %>%
+   createDataFrame()
+df %>%
+   collect()
+df %>%
+   filter(hour(column("date")) >= 9 &
+          hour(column("date")) < 17 &  # working hours only
+          dayofweek(column("date")) < 5  # all days, except Fri, Sat
+          ) %>%
+   collect()
+```
+
+---
 
 One can sample a certain percentage of observations with
 ```{r sample, eval=FALSE}
@@ -565,6 +588,9 @@ where fraction is the percentage (between 0 and 1)
 of the original data to be sampled.
 The fraction is claimed to be approximate, and
 there seems to be no way to sample an exact number of observations.
+
+
+
 
 
 # Working with data: the _map_ part
