@@ -13,6 +13,15 @@ output:
 
 # Introduction
 
+```{r setup, include=TRUE}
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, fig.path=".figs/timing-matrices",
+                     message=FALSE, error=TRUE,
+                     cache=TRUE, cache.path=".cache/timing-matrices/"
+                     )
+```
+
+
 Base R has only one type of matrices/vectors, but the _Matrix_ package
 implements a variety of sparse, symmetric, and special matrices.  In
 addition, there is _SparseM_ package with it's own implementation of
@@ -25,14 +34,8 @@ intern=TRUE)` using R `r paste0(R.Version()$major, ".",
 R.Version()$minor)`, Matrix package `r packageVersion("Matrix")` and
 SparseM version `r packageVersion("SparseM")`.
 
-```{r setup, include=FALSE}
+```{r init, include=TRUE}
 options(width=95)
-knitr::opts_knit$set(aliases=c(h="fig.height"))
-knitr::opts_chunk$set(fig.height=100/25.4, 
-                     message=FALSE, error=TRUE,
-                     cache=TRUE, cache.path=".cache-matrices/",
-                     engine.path = list(python = "/usr/bin/python3")
-                     )
 library(Matrix)
 library(SparseM)
 library(magrittr) # 'cause I love pipes
@@ -135,13 +138,13 @@ classes <- data.frame(matrix=c("A", "B", "denseA", "denseB",
                                "csrA", "csrB"),
                       class=sapply(smallMatrices, class),
                       rows=sapply(smallMatrices, nrow),
-                      cols=sapply(smallMatrices, ncol),
-                      memory=sapply(smallMatrices,
-                                    function(o) gdata::humanReadable(object.size(o))),
-                      "row class"=sapply(smallMatrices,
-                                         function(o) class(o[1,])[1]),
-                      "col class"=sapply(smallMatrices,
-                                         function(o) class(o[,1])[1])
+                      cols=sapply(smallMatrices, ncol)
+                      ## memory=sapply(smallMatrices,
+                      ##               function(o) gdata::humanReadable(object.size(o))),
+                      ## "row class"=sapply(smallMatrices,
+                      ##                    function(o) class(o[1,])[1]),
+                      ## "col class"=sapply(smallMatrices,
+                      ##                    function(o) class(o[,1])[1])
                       )
 knitr::kable(classes)
 ```

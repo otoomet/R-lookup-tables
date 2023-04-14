@@ -13,7 +13,7 @@ all: $(HTML)
 %.md: %.rmd
 	Rscript -e "knitr::knit('$<', quiet=FALSE)"
 
-%.html: %.md
+%.html: %.md style.css
 	Rscript -e "rmarkdown::render('$<', output_format=\"all\")"
 
 %.png: %.asy

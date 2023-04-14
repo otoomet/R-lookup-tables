@@ -1,0 +1,180 @@
+/* Copied from bookdown text */
+/* https://raw.githubusercontent.com/rstudio/bookdown/master/inst/examples/css/style.css */
+
+/* Text blocks:
+ * alert: warnings and such
+ * exercise
+ * recap 
+ * tip
+*/
+/* alert: warnings and such text */
+.alert {
+    background-color: #ffdcd6;
+}
+
+.alert:before {
+    content: "NB!";
+    font-size: 120%;
+}
+
+/* ---------- exercises */
+.exercise {
+    background-color: #fff0f0;
+}
+
+.exercise::before {
+    /* content: "Exercise:"; */
+    font-size: 120%;
+    color: #990000;
+}
+
+/* recap */
+.recap {
+    background-color: #F3F3F3;
+}
+
+.recap:before {
+    content: "Recap:";
+    font-size: 120%;
+    color: #8282FF;
+}
+
+/* tips */
+.tip {
+    background-color: #d9fcdb;
+    margin-left: 7%
+}
+
+.tip:before {
+    content: "Tip:";
+    font-size: 120%;
+    color: #035407;
+}
+
+/* ---------- figure stuff ---------- */
+
+figure div.column {
+    flex: 50%;
+    border: thin silver solid;
+}
+
+/* just figure: on the right side */
+figure {
+  float: right;
+  width: 50%;
+  text-align: center;
+  font-style: italic;
+  font-size: smaller;
+  text-indent: 0;
+  border: thin silver solid;
+  margin: 0.5em;
+  padding: 0.5em;
+}
+/* figure.wide: a wide figure filling the whole text width */
+figure.wide {
+    float: none;
+  width: 90%;
+  text-align: left;
+  font-style: italic;
+  font-size: smaller;
+  text-indent: 0;
+  border: thin silver solid;
+  margin: 0.5em;
+  padding: 0.5em;
+}
+
+/* clear the text flow around figure */
+.clearfix {
+    overflow: auto;
+}
+
+figure p.caption {
+    text-align: left;
+    font-size: 90% !important;
+    color: #777;
+    margin-top: 10px;
+}
+
+.row {
+    display: flex;
+    column-gap: 3%;
+}
+
+
+/* ---------- other stuff ---------- */
+/* Can do custom css here */
+#header .title {
+  font-size:2.25em;
+  margin-bottom:.5em;
+}
+
+#header .author, #header .date {
+  font-weight:500;
+  margin-top: 0;
+}
+
+#header .author {
+  margin-bottom: 0;
+}
+
+
+#header .date:before {
+  font-weight: 500;
+  font-style: italic;
+  content: "Last updated: ";
+}
+
+/* appendix number fix?*/
+.header-section-number {
+    padding-right: .5em;
+}
+
+.page-inner li {
+  margin-bottom: .85em;
+}
+
+.page-inner li ul {
+  margin-top: .85em !important;
+}
+
+/* class to remove double-spacing in lists */
+.page-inner .list-condensed li,
+.page-inner .list-condensed ol li,
+.page-inner .list-condensed ul li  {
+    margin-bottom: 0 !important;
+}
+
+.page-inner .list-condensed ol,
+.page-inner .list-condensed ul {
+    margin-top: 0 !important;
+}
+
+.footnotes ol li {
+  margin-bottom: .5em;
+}
+
+.footnotes ol li p {
+  margin-bottom: .5em !important;
+}
+
+/* Common? */
+p code {
+  white-space: inherit;
+}
+pre {
+  word-break: normal;
+  word-wrap: normal;
+  line-height: 1.42em;
+}
+pre code {
+  white-space: inherit;
+}
+
+.clear {
+  clear:both
+}
+
+/* Hide the top header */
+#about-the-book > h1  {
+  display:none;
+}

@@ -88,6 +88,20 @@ drawn using the current line width, multiplied but `dotfactor`
 (default: 6).
 
 
+## Adjusting drawings
+
+### Line width
+
+The line width can be adjusted with `linewidth(points)` in the `draw`
+command.  E.g. 
+```
+draw((1,2)--(2,1), linewidth(1));
+```
+The default line width is 0.5, it can be changed with, e.g.
+```
+defaultpen(linewidth(1))
+```
+
 
 # Labels
 
@@ -149,6 +163,21 @@ This results in
 ![](asymptote/labels-dir-fill.png)
 
 
+## Adjusting labels
+
+### Font size
+
+The font size can be adjusted by `fontsize(points)` in the `label`
+command.  E.g. 
+```
+label("$x_1$, (1,2), fontsize(8));
+```
+The default fontsize is 12, it can be changed with, e.g.
+```
+defaultpen(fontsize(9))
+```
+
+
 # Frames and pictures {#frames-pictures}
 
 Frames and pictures are a way to repeate certain complex drawings when
@@ -188,9 +217,9 @@ postscript units.  However, one can use similar `add` function, and
 scale frames.
 
 
-# Coding
+# Coding {#coding}
 
-## Output
+## Output {#coding-output}
 
 Output to console can be done using `write`, it accepts a list of
 arguments that will be printed, no spaces are inserted between the
@@ -198,6 +227,27 @@ list items.  It can print various _asymptote_ data
 structures, including pairs and paths.  See example in
 [Functions](#coding-functions). 
 
+It is limited though in terms of what kind of data structures it can
+take and in which order, it will not accept a complex list of strings
+and integers.  You can convert those to strings using `string()`,
+e.g. 
+```
+write("x = " + string(x) + ",  y = " + string(y));
+```
+
+
+## Variable types {#coding-vartypes}
+
+The basic variable types are `int`, `real`, `bool`, `string`.
+
+The drawing specific variables are `pair`, `path`, `pen`, `transform`
+
+## Casting
+
+Real can be casted to integer as `round(x)`, `floor(x)` and
+`ceil(x)`, there is no explicit cast function `int()`.
+
+A number can be casted to sring with `string(x)`.
 
 ## For loops
 

@@ -1,0 +1,208 @@
+---
+title: "Speed of R Matrix element access and modification"
+subtitle: "Comparing Different Matrices"
+author: Ott Toomet
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: 
+  html_document:
+    highlight: tango
+    df_print: kable
+    fig_caption: false
+    code_folding: show
+---
+
+# Introduction
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(aliases=c(h="fig.height"))
+knitr::opts_chunk$set(fig.height=100/25.4, fig.path=".figs/matrix-size-speed",
+                     message=FALSE, error=TRUE,
+                     cache=TRUE, cache.path=".cache/matrix-size-speed/"
+                     )
+```
+
+This post analyses the speed of simple matrix operations--modifying
+single elements in a loop--depending on matrix size and type.
+
+
+The tests are done on an
+`r system("lscpu | grep 'Model name:' | sed -e 's/Model name: \\+//'",
+intern=TRUE)` using R `r paste0(R.Version()$major, ".",
+R.Version()$minor)`, Matrix package `r packageVersion("Matrix")` and
+SparseM version `r packageVersion("SparseM")`.
+
+```{r init, include=TRUE}
+options(width=100)
+library(Matrix)
+library(SparseM)
+library(magrittr) # 'cause I love pipes
+library(microbenchmark) # to avoid delay when using the first time
+library(data.table)
+```
+
+We use _microbenchmark_ library.  Our main interest is to compare the
+matrix implementations, hence we run most tests with `OMP_NUM_THREADS`
+set to 1.  We run the tests initially for small matrices and afterwards for
+large matrices.
+
+
+# Element access speed
+
+We test the access speed using such a loop:
+
+```{r access-loop, error=FALSE}
+loop <- function(mat, R=1000) {
+   N <- nrow(mat)
+   M <- ncol(mat)
+   a <- 0
+   for(r in 1:R) {
+      i <- r %% N
+      j <- r %% (N-1)
+      a <- a + mat[i, j]
+   }
+}
+```
+
+First, how stable is the result over different number of repetitions?
+
+```{r, dependson="access-loop"}
+dim <- 10
+m <- matrix(0, nrow=dim, ncol=dim)
+microbenchmark(
+   loop(m, 10),
+   loop(m, 100),
+   loop(m, 1000),
+   loop(m, 1e4),
+   times=10, control=list(warmup=10))
+```
+So one reading from a $10\times 10$ takes 10-20µs.  This may well be
+dominated by overhead costs regarding looping and sampling.  It jumps
+somewhat depending on the number of repetitions.
+
+Next, create matrices of different size:
+```{r}
+m1 <- matrix(0, nrow=10, ncol=10)
+m2 <- matrix(0, nrow=100, ncol=100)
+m3 <- matrix(0, nrow=1e3, ncol=1e3)
+m4 <- matrix(0, nrow=1e4, ncol=1e4)
+```
+
+Reading of individual elements from these matrices takes
+```{r benchmark-access, dependson="access-loop"}
+r <- microbenchmark(
+   loop(m1, 100),
+   loop(m2, 100),
+   loop(m3, 100),
+   loop(m4, 100),
+   times=10, control=list(warmup=10))
+r
+```
+The results are still unstable, but the median is fairly constant, and
+falling for large matrices.  Hence a single element operation takes
+roughly, if you take into account that we time a loop of 100
+repetitions, 
+```{r, depenson="benchmark-access"}
+median(r[r$expr == "loop(m4, 100)", "time"])/100/1e3
+```
+microseconds.
+
+
+# Element modification speed
+
+Next, let's modify these matrices element-by-element.  The
+modification loop we time now is
+
+```{r modify-loop, error=FALSE}
+loop <- function(mat, R=1000) {
+   N <- nrow(mat)
+   M <- ncol(mat)
+   for(r in 1:R) {
+      i <- r %% N
+      j <- r %% (N-1)
+      mat[i, j] <- mat[i, j] + 1
+   }
+}
+```
+Again, test the stability in terms of loop size:
+```{r modify-stability, dependson="modify-loop"}
+m <- matrix(0, nrow=10, ncol=10)
+r <- microbenchmark(
+   loop(m, 10),
+   loop(m, 100),
+   loop(m, 1000),
+   loop(m, 1e4),
+   times=10, control=list(warmup=5))
+r
+```
+Compute the median time per one modification for all four loop sizes:
+```{r, dependson="modify-stability"}
+t1 <- median(r[r$expr == "loop(m, 10)", "time"])/10/1e3
+t2 <- median(r[r$expr == "loop(m, 100)", "time"])/100/1e3
+t3 <- median(r[r$expr == "loop(m, 1000)", "time"])/1000/1e3
+t4 <- median(r[r$expr == "loop(m, 10000)", "time"])/1e4/1e3
+t1; t2; t3; t4
+```
+So one modification of a $10\times 10$ matrix takes about 1µs.
+This may well be
+dominated by overhead costs regarding looping and computing indices.
+It is
+fairly stable regarding the number of loops.
+
+Now, test this for different matrix sizes.
+```{r benchmark-modify, dependson="modify-loop"}
+m1 <- matrix(0, nrow=10, ncol=10)
+m2 <- matrix(0, nrow=100, ncol=100)
+m3 <- matrix(0, nrow=1e3, ncol=1e3)
+m4 <- matrix(0, nrow=1e4, ncol=1e4)
+r <- microbenchmark(
+   loop(m1, 100),
+   loop(m2, 100),
+   loop(m3, 100),
+   loop(m4, 100),
+   times=10, control=list(warmup=5))
+r
+```
+Here the median time per matrix modification, in microseconds, is
+```{r, dependson=c("benchmark-modify")}
+t1 <- median(r[r$expr == "loop(m1, 100)", "time"])/100/1e3
+t2 <- median(r[r$expr == "loop(m2, 100)", "time"])/100/1e3
+t3 <- median(r[r$expr == "loop(m3, 100)", "time"])/100/1e3
+t4 <- median(r[r$expr == "loop(m4, 100)", "time"])/100/1e3
+```
+It is visible that the modification time,
+`r t1`, `r t2`, `r t3` and `r t4` microseconds respectively,
+deteriorates rapidly as the
+matrices get larger.  This is probably a side effect of
+copy-on-modify.  One modification of a $10,000\times10,000$ matrix
+takes around 7ms.
+
+
+# Other matrices
+
+It might be interesting to see if other matrix types, such as those
+implemented in _SparseM_ or _Matrix_, behave any differently:
+Now, test this for different matrix sizes.
+```{r Matrix-benchmark-modify, dependson="modify-loop"}
+m1 <- Matrix(0, nrow=10, ncol=10)
+m2 <- Matrix(0, nrow=100, ncol=100)
+m3 <- Matrix(0, nrow=1e3, ncol=1e3)
+m4 <- Matrix(0, nrow=1e4, ncol=1e4)
+r <- microbenchmark(
+   loop(m1, 100),
+   loop(m2, 100),
+   loop(m3, 100),
+   loop(m4, 100),
+   times=10, control=list(warmup=5))
+r
+```
+The single modification takes
+```{r, dependson=c("Matrix-benchmark-modify")}
+t1 <- median(r[r$expr == "loop(m1, 100)", "time"])/100/1e3
+t2 <- median(r[r$expr == "loop(m2, 100)", "time"])/100/1e3
+t3 <- median(r[r$expr == "loop(m3, 100)", "time"])/100/1e3
+t4 <- median(r[r$expr == "loop(m4, 100)", "time"])/100/1e3
+```
+`r t1`, `r t2`, `r t3` and `r t4` microseconds respectively.
+Interestingly, while these times are longer for small matrices, they
+are shorter for large matrices, suggesting that `Matrix` may be more
+efficient internally, but suffer from certain class overheads.

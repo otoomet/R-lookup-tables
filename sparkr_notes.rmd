@@ -13,13 +13,14 @@ output:
       smooth_scroll: false
     toc_depth: 2
     number_sections: true
+    css: "style.css"
 ---
 
 ```{r setup, include=FALSE, cache=FALSE}
 options(tibble.width=60, tibble.print_max=7, tibble.print_min=4)
 knitr::opts_knit$set(aliases=c(h="fig.height"))
-knitr::opts_chunk$set(fig.height=100/25.4, 
-                      cache=FALSE,
+knitr::opts_chunk$set(fig.height=100/25.4, fig.path=".figs/sparkr-notes/",
+                      cache=FALSE, cache.path=".cache/sparkr-notes/",
                       message=FALSE)
 SPARK_HOME <- file.path(Sys.getenv("HOME"), "local", "spark")
 library("SparkR", lib.loc=file.path(SPARK_HOME, "R", "lib"))
@@ -514,6 +515,10 @@ dfa %>% select("yob", "family") %>%
 `select` is rather permissive in it's arguments, in addition to the
 above, one can also use `select(c("yob", "family"))` and
 `select(list("yob", "family"))`.
+
+<div class="alert">
+Remember: `select` expects a list of _quoted_ column names!
+</div>
 
 
 ## Dropping variables
