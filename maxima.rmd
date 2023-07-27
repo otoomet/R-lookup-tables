@@ -184,6 +184,12 @@ express(u ~ v);
 ```
 
 
+# Differentiation and integration {#differentiation-integration}
+
+`integrate(f, x)` to compute undetermined integral, `integrate(f, x,
+a, b)` to compute determined integral from a to b.
+
+
 
 ## Library Functions
 
