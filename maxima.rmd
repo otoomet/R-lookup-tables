@@ -59,6 +59,12 @@ Topics can be function names.
 
 ## Basic Data types
 
+### Constants
+
+* `inf`: (positive) infinity
+* `%pi`: 3.14
+* `%e`: 2.78
+* `%i`: imaginary unit
 
 ## Operators:
 
@@ -130,6 +136,13 @@ ratsimp(e);
 `express` evaluates unevaluated expression
 
 
+`float` can convert an expression to fraction:
+```{maxima}
+sqrt(%pi)/2;
+float(sqrt(%pi)/2);
+```
+
+
 ## Solving equations
 
 `solve` can solve non-linear equations.  It takes two arguments: a
@@ -187,10 +200,21 @@ express(u ~ v);
 # Differentiation and integration {#differentiation-integration}
 
 `integrate(f, x)` to compute undetermined integral, `integrate(f, x,
-a, b)` to compute determined integral from a to b.
+a, b)` to compute determined integral from a to b.  The limits can
+contain infinity `inf`:
+```{maxima}
+phi(x) := 1/sqrt(2*%pi)*exp(-1/2*x^2);
+   /* normal density function */
+integrate(phi(x), x, -inf, inf); 
+```
 
 
 
-## Library Functions
+# Library Functions
 
 * `determinant` (not `det`!)
+
+
+# Programming
+
+Maxima supports `/* C-style comments */` but not C++-style comments. 
