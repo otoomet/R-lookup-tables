@@ -37,7 +37,12 @@ PTS asks a number of questions:
 * _Enter a name for the result file:_  The results can be saved in
   different files.  Normally you want to save different tests/suites
   in different files and call the files accordingly (e.g _graphics_ or
-  _encoding_).  One file can hold results for multiple test runs.  If
+  _encoding_).  Alternatively, if comparing different computer
+  settings while running the
+  same test, you may call this file according to the test, and
+  individual runs according to the settings.
+
+  One file can hold results for multiple test runs.  If
   you upload the results to OBO, then they are displayed one file at
   time.  File name cannot be the same as name of the test.  You can
   save results from multiple runs in the same file, i.e. enter name of
@@ -50,10 +55,14 @@ PTS asks a number of questions:
   commands below.
 * _Enter a unique name to describe this test run / configuration:_
   Inside of the files, different test runs are distinguished by this
-  name.  Here you can put your computer name and tell something about
+  name.  Here you can put your computer name if comparing different
+  computers, or tell something about
   the current configuration (e.g. _laptop running on battery_ or
   _no power limits_).  Note that CPU, GPU and other easily obtainable
   data is automatically included.
+  
+  I have found the form
+  _computer-settings_ (computer name - dash - settings) quite useful.
 * PTS may also ask a number of question about the exact test type(s)
   you want to run, e.g. screen resolution or the type of the
   renderer. 
@@ -68,14 +77,16 @@ list-saved-results`.  See [Manage results](#manage-results)
 
 # Manage results {#manage-results}
 
-Managing PTS results works through command line as
+Managing PTS results can be done in two ways: first, through command line as
 `phoronix-test-suite <arguments>`.  Below, we describe the more
-important argumnets.
+important argumnets.  Second, when looking at the results in PTS
+results viewer, there are also corresponding buttons you can use to
+remove/rename certain data.
 
 
 ## Find out what you have already done
 
-`list-saved-results`
+* `list-saved-results`
   lists the locally saved results.  The results are
   displayed by **test-id** (in bold, see Section [Running Tests](#running-tests))
   followed by the file name they are
@@ -90,6 +101,7 @@ important argumnets.
   It also lists test runs inside the files (answer
   to _Enter a unique name to describe this test run /
   configuration:_).
+* `show-results <test-id>` will show the results in the web browser. 
 
 
 ## Merging similar tests
@@ -153,10 +165,18 @@ here, e.g. _executive-summary_ or _result-file-stats_.
 
 
 ## Delete results
-  
-`remove-result <test-id>`  Delete the file, corresponding to the
+
+You can delete the results in multiple ways:
+
+* `remove-result <test-id>`  deletes the file, corresponding to the
   test id (the first bold name listed by `list-saved-results`).
   `remove-result` accepts more than one _test-id_, but ignores those. 
+* `remove-result-from-result-file <test-id>` deletes a single test from the
+  results file.  _test-id_ must be provided, PTS will prompt for the
+  test to be removed.
+* `remove-run-from-result-file <test-id>` deletes a single run from the
+  results file.  _test-id_ must be provided, PTS will prompt for the
+  run name.
 
 
 ## Upload results to OBO
